@@ -63,7 +63,7 @@ export default function NewTripPage() {
 
     try {
       // 1) Trip beszúrás
-      const { data: tripInsertData, error: tripError } = await supabase
+            const { data: tripInsertData, error: tripError } = await supabase
         .from("trips")
         .insert({
           owner_id: user.id,
@@ -77,9 +77,15 @@ export default function NewTripPage() {
         .single();
 
       if (tripError || !tripInsertData) {
-        console.error(tripError);
-        throw new Error("Nem sikerült létrehozni az utazást.");
+        console.error("TRIP INSERT ERROR:", tripError);
+        setError(
+          tripError?.message ??
+            "Ismeretlen hiba történt az utazás létrehozásakor."
+        );
+        setSubmitting(false);
+        return;
       }
+
 
       const tripId = tripInsertData.id as string;
 
@@ -107,7 +113,8 @@ export default function NewTripPage() {
       // ✳️ KÉSŐBB: ha meglesz a /trip/[id] oldal, ide jöhet a redirect:
       // router.push(`/trip/${tripId}`);
     } catch (err: any) {
-      setError(err.message ?? "Ismeretlen hiba történt.");
+      console.error("HANDLE SUBMIT ERROR:", err);
+      setError(err?.message ?? "Ismeretlen hiba történt.");
     } finally {
       setSubmitting(false);
     }
