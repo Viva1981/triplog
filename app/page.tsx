@@ -197,7 +197,7 @@ export default function HomePage() {
               {/* később ide jönnek a szűrők / keresés */}
             </div>
 
-            {loadingTrips && (
+            {lo{!loadingTrips && !tripsError && trips.length > 0 && (adingTrips && (
               <p className="text-sm text-slate-500">Utazások betöltése...</p>
             )}
 
@@ -207,28 +207,17 @@ export default function HomePage() {
               </div>
             )}
 
-            {!loadingTrips && !tripsError && trips.length === 0 && (
-              <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-6 text-center text-sm text-slate-500">
-                Még nincs egyetlen utazásod sem.{" "}
-                <Link
-                  href="/new-trip"
-                  className="text-[#16ba53] font-medium underline"
-                >
-                  Hozz létre egyet most!
-                </Link>
-              </div>
-            )}
-
-            {!loadingTrips && !tripsError && trips.length > 0 && (
+                        {!loadingTrips && !tripsError && trips.length > 0 && (
               <div className="grid gap-4 md:grid-cols-2">
                 {trips.map((trip) => {
                   const from = formatDate(trip.date_from);
                   const to = formatDate(trip.date_to);
 
                   return (
-                    <div
+                    <Link
                       key={trip.id}
-                      className="bg-white rounded-2xl shadow-md p-4 flex flex-col justify-between border border-slate-100"
+                      href={`/trip/${trip.id}`}
+                      className="bg-white rounded-2xl shadow-md p-4 flex flex-col justify-between border border-slate-100 hover:shadow-lg hover:border-[#16ba53]/30 transition"
                     >
                       <div>
                         <h3 className="text-base font-semibold mb-1">
@@ -251,17 +240,11 @@ export default function HomePage() {
                         <span className="text-[11px] uppercase tracking-wide text-slate-400">
                           Saját utazás
                         </span>
-                        {/* Később: link a részletes oldalra /trip/[id] */}
-                        <button
-                          type="button"
-                          className="text-xs text-[#16ba53] font-medium underline cursor-default"
-                          disabled
-                          title="Hamarosan megnyílik a részletes nézet 😉"
-                        >
-                          Részletek hamarosan
-                        </button>
+                        <span className="text-xs text-[#16ba53] font-medium underline">
+                          Részletek
+                        </span>
                       </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>
