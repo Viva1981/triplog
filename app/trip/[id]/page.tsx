@@ -17,6 +17,7 @@ type Trip = {
   destination: string | null;
   date_from: string | null;
   date_to: string | null;
+  notes: string | null;
 };
 
 type Expense = {
@@ -53,6 +54,12 @@ export default function TripDetailPage() {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [loadingTrip, setLoadingTrip] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Jegyzet állapot
+  const [noteInput, setNoteInput] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [noteSuccess, setNoteSuccess] = useState<string | null>(null);
 
   // Költségek állapot
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -105,7 +112,7 @@ export default function TripDetailPage() {
 
       const { data, error } = await supabase
         .from("trips")
-        .select("id, owner_id, title, destination, date_from, date_to")
+        .select("id, owner_id, title, destination, date_from, date_to, notes")
         .eq("id", tripId)
         .single();
 
@@ -117,7 +124,9 @@ export default function TripDetailPage() {
         );
         setTrip(null);
       } else {
-        setTrip(data as Trip);
+        const tripData = data as Trip;
+        setTrip(tripData);
+        setNoteInput(tripData.notes ?? "");
       }
 
       setLoadingTrip(false);
@@ -207,10 +216,8 @@ export default function TripDetailPage() {
           error?.message ?? "Nem sikerült elmenteni a költséget."
         );
       } else {
-        // új költség hozzáadása a listához
         setExpenses((prev) => [...prev, data as Expense]);
         setExpenseSuccess("Költség sikeresen rögzítve.");
-        // űrlap ürítése
         setExpenseDate("");
         setExpenseCategory("");
         setExpenseNote("");
@@ -222,6 +229,36 @@ export default function TripDetailPage() {
       setExpensesError(err?.message ?? "Ismeretlen hiba történt.");
     } finally {
       setSubmittingExpense(false);
+    }
+  };
+
+  const handleNoteSave = async () => {
+    if (!trip) return;
+    setSavingNote(true);
+    setNoteError(null);
+    setNoteSuccess(null);
+
+    try {
+      const { data, error } = await supabase
+        .from("trips")
+        .update({ notes: noteInput })
+        .eq("id", trip.id)
+        .select("notes")
+        .single();
+
+      if (error || !data) {
+        console.error("NOTE UPDATE ERROR:", error);
+        setNoteError(
+          error?.message ?? "Nem sikerült elmenteni a jegyzetet."
+        );
+      } else {
+        setNoteSuccess("Jegyzet elmentve.");
+      }
+    } catch (err: any) {
+      console.error("NOTE SAVE ERROR:", err);
+      setNoteError(err?.message ?? "Ismeretlen hiba történt.");
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -257,8 +294,10 @@ export default function TripDetailPage() {
 
   const isOwner = user && user.id === trip.owner_id;
 
-  // Költségek összegzése egyszerűen (összesített összeg)
-  const totalAmount = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const totalAmount = expenses.reduce(
+    (sum, e) => sum + Number(e.amount || 0),
+    0
+  );
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -308,7 +347,7 @@ export default function TripDetailPage() {
           </div>
         </section>
 
-        {/* Szekciók – fotók, dokumentumok, jegyzetek stb. */}
+        {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
         <section className="grid gap-4 md:grid-cols-2 mb-4">
           {/* Fotók */}
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
@@ -336,12 +375,41 @@ export default function TripDetailPage() {
           {/* Jegyzet */}
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">Jegyzet</h2>
-            <p className="text-xs text-slate-500">
-              Utazási terv, emlékek, teendők, tennivalók – minden egy helyen.
+            <p className="text-xs text-slate-500 mb-2">
+              Ide írhatod az utazás terveit, emlékeket, fontos információkat.
             </p>
-            <div className="mt-3 text-[11px] text-slate-400">
-              Funkció hamarosan érkezik. 📝
-            </div>
+
+            <textarea
+              className="w-full border rounded-xl px-3 py-2 text-xs min-h-[120px] focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
+              placeholder="Pl.: Érkezés 14:00-kor, találkozó a reptéren, első nap városnézés..."
+              value={noteInput}
+              onChange={(e) => {
+                setNoteInput(e.target.value);
+                setNoteError(null);
+                setNoteSuccess(null);
+              }}
+            />
+
+            {noteError && (
+              <div className="mt-2 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
+                {noteError}
+              </div>
+            )}
+
+            {noteSuccess && (
+              <div className="mt-2 text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
+                {noteSuccess}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleNoteSave}
+              disabled={savingNote}
+              className="mt-2 w-full py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
+            >
+              {savingNote ? "Mentés..." : "Jegyzet mentése"}
+            </button>
           </div>
 
           {/* Költségek – űrlap + lista */}
