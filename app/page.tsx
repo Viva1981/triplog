@@ -197,17 +197,7 @@ export default function HomePage() {
               {/* később ide jönnek a szűrők / keresés */}
             </div>
 
-            {lo{!loadingTrips && !tripsError && trips.length > 0 && (adingTrips && (
-              <p className="text-sm text-slate-500">Utazások betöltése...</p>
-            )}
-
-            {tripsError && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-4">
-                {tripsError}
-              </div>
-            )}
-
-                        {!loadingTrips && !tripsError && trips.length > 0 && (
+            {!loadingTrips && !tripsError && trips.length > 0 && (
               <div className="grid gap-4 md:grid-cols-2">
                 {trips.map((trip) => {
                   const from = formatDate(trip.date_from);
