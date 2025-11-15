@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { ReactNode } from "react";
 import { SwRegister } from "./sw-register";
+import { Header } from "./Header";
 
 export const metadata: Metadata = {
   title: "TripLog",
@@ -16,8 +17,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="hu">
       <body className="bg-slate-50">
         <SwRegister />
+        <Header />
         {children}
       </body>
     </html>
   );
 }
+
