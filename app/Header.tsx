@@ -50,8 +50,11 @@ export function Header() {
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/`,
+        // 🔴 ITT KÉRJÜK A DRIVE JOGOKAT
         scopes:
           "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file",
+        // 🔴 KÉNYSZERÍTETT TELJES CONSENT KÉPERNYŐ
+        prompt: "consent",
       },
     });
   };
