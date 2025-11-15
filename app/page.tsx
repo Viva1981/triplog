@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
 
@@ -15,164 +15,153 @@ type Trip = {
   destination: string | null;
   date_from: string | null;
   date_to: string | null;
+  owner_id: string;
 };
 
-type TripFilterType = "all" | "own" | "shared";
+type Membership = {
+  trip_id: string;
+  role: "owner" | "member";
+};
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  try {
-    const d = new Date(dateStr);
-    return new Intl.DateTimeFormat("hu-HU", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(d);
-  } catch {
-    return dateStr ?? "";
-  }
-}
+type TripWithRole = Trip & { memberRole: "owner" | "member" };
 
 export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  const [trips, setTrips] = useState<Trip[]>([]);
+  const [trips, setTrips] = useState<TripWithRole[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
-  const [tripsError, setTripsError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // KERESÉS + SZŰRŐK
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterType, setFilterType] = useState<TripFilterType>("all");
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState<"all" | "own" | "shared">("all");
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
 
-  // User betöltése
+  // --- USER BETÖLTÉSE ---
   useEffect(() => {
-    const getUser = async () => {
+    const loadUser = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (user) {
-        setUser({ id: user.id, email: user.email ?? undefined });
-      } else {
+
+      if (!user) {
         setUser(null);
+        setLoadingUser(false);
+        return;
       }
+
+      setUser({
+        id: user.id,
+        email: user.email ?? undefined,
+      });
       setLoadingUser(false);
     };
 
-    getUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser({ id: session.user.id, email: session.user.email ?? undefined });
-      } else {
-        setUser(null);
-        setTrips([]);
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    loadUser();
   }, []);
 
-  // Saját utazások lekérése
+  // --- UTAZÁSOK BETÖLTÉSE (csak ha van user) ---
   useEffect(() => {
-    const fetchTrips = async () => {
+    const loadTrips = async () => {
       if (!user) {
         setTrips([]);
         return;
       }
 
       setLoadingTrips(true);
-      setTripsError(null);
+      setError(null);
 
-      const { data, error } = await supabase
-        .from("trips")
-        .select("id, title, destination, date_from, date_to")
-        .order("date_from", { ascending: true });
+      try {
+        // 1) tagságok
+        const { data: memberships, error: memberError } = await supabase
+          .from("trip_members")
+          .select("trip_id, role")
+          .eq("user_id", user.id);
 
-      if (error) {
-        console.error("TRIPS FETCH ERROR:", error);
-        setTripsError(error.message ?? "Nem sikerült betölteni az utazásokat.");
-      } else {
-        setTrips((data ?? []) as Trip[]);
+        if (memberError) {
+          console.error(memberError);
+          throw new Error("Nem sikerült betölteni az utazásokat.");
+        }
+
+        const membershipList = (memberships ?? []) as Membership[];
+
+        if (membershipList.length === 0) {
+          setTrips([]);
+          setLoadingTrips(false);
+          return;
+        }
+
+        const tripIds = membershipList.map((m) => m.trip_id);
+
+        // 2) utak
+        const { data: tripsData, error: tripsError } = await supabase
+          .from("trips")
+          .select("*")
+          .in("id", tripIds);
+
+        if (tripsError) {
+          console.error(tripsError);
+          throw new Error("Nem sikerült betölteni az utazásokat.");
+        }
+
+        const tripsList = (tripsData ?? []) as Trip[];
+
+        const merged: TripWithRole[] = tripsList.map((t) => {
+          const membership = membershipList.find((m) => m.trip_id === t.id);
+          return {
+            ...t,
+            memberRole: membership?.role ?? "member",
+          };
+        });
+
+        setTrips(merged);
+      } catch (err: any) {
+        setError(err?.message ?? "Ismeretlen hiba történt.");
+      } finally {
+        setLoadingTrips(false);
       }
-
-      setLoadingTrips(false);
     };
 
-    fetchTrips();
+    loadTrips();
   }, [user]);
 
-  const handleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        scopes:
-          "openid email profile https://www.googleapis.com/auth/drive.readonly",
-      },
-    });
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
-
-  // SZŰRT LISTA KISZÁMOLÁSA
+  // --- SZŰRT LISTA ---
   const filteredTrips = useMemo(() => {
-    let res = [...trips];
+    let list = [...trips];
 
-    // Szűrés keresőkifejezésre (cím + desztináció)
-    if (searchTerm.trim()) {
-      const q = searchTerm.trim().toLowerCase();
-      res = res.filter((trip) => {
-        const title = trip.title?.toLowerCase() ?? "";
-        const dest = trip.destination?.toLowerCase() ?? "";
-        return title.includes(q) || dest.includes(q);
-      });
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          (t.destination ?? "").toLowerCase().includes(q)
+      );
     }
 
-    // Dátum szűrés (átfedés logika: ha a trip bármely része belelóg az intervallumba)
-    const from = filterFrom ? new Date(filterFrom) : null;
-    const to = filterTo ? new Date(filterTo) : null;
-
-    if (from || to) {
-      res = res.filter((trip) => {
-        const tripFrom = trip.date_from ? new Date(trip.date_from) : null;
-        const tripTo = trip.date_to ? new Date(trip.date_to) : null;
-
-        // ha a tripnek sincs dátuma → ne jelenjen meg szűrt módban
-        if (!tripFrom && !tripTo) return false;
-
-        const start = tripFrom ?? tripTo!;
-        const end = tripTo ?? tripFrom!;
-
-        if (from && end < from) return false;
-        if (to && start > to) return false;
-
-        return true;
-      });
-    }
-
-    // Trip típusa - jelenleg RLS miatt valójában csak sajátakat látunk,
-    // de az UI készen áll a későbbi "közös utazások" logikához.
     if (filterType === "own") {
-      // később itt lehetne owner filter, ha lenne join
-      // most minden trip saját (owner), így nincs különbség
-      res = res;
+      list = list.filter((t) => t.memberRole === "owner");
     } else if (filterType === "shared") {
-      // később: csak azok, ahol útitárs, de nem owner
-      // most még üres, ezért ideiglenesen nincs külön logika
-      res = res;
+      list = list.filter((t) => t.memberRole !== "owner");
     }
 
-    return res;
-  }, [trips, searchTerm, filterFrom, filterTo, filterType]);
+    if (filterFrom) {
+      list = list.filter((t) => !t.date_from || t.date_from >= filterFrom);
+    }
+    if (filterTo) {
+      list = list.filter((t) => !t.date_to || t.date_to <= filterTo);
+    }
 
+    list.sort(
+      (a, b) =>
+        new Date(a.date_from ?? "2100-01-01").getTime() -
+        new Date(b.date_from ?? "2100-01-01").getTime()
+    );
+
+    return list;
+  }, [trips, search, filterType, filterFrom, filterTo]);
+
+  // --- LOADING ÁLLAPOT ---
   if (loadingUser) {
     return (
       <main className="min-h-screen flex items-center justify-center">
@@ -181,254 +170,154 @@ export default function HomePage() {
     );
   }
 
-  return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        {/* FEJLÉC */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold">TripLog</h1>
-            <p className="text-sm text-slate-600">
-              Utazások tervezése, dokumentálása, költségek egy helyen.
-            </p>
-          </div>
+  // --- NINCS BEJELENTKEZVE: NINCS TÖBBÉ LOGIN GOMB ITT :) ---
+  if (!user) {
+    return (
+      <main className="min-h-screen bg-slate-50 flex flex-col items-center pt-16 px-4">
+        <section className="w-full max-w-4xl mb-10">
+          <h1 className="text-3xl font-bold mb-2 text-slate-900">TripLog</h1>
+          <p className="text-slate-600">
+            Utazások tervezése, dokumentálása, költségek egy helyen.
+          </p>
+        </section>
 
-          <div className="flex flex-col items-end gap-2">
-            {!user && (
-              <button
-                onClick={handleLogin}
-                className="py-2 px-4 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 transition text-sm"
-              >
-                Bejelentkezés Google-lel
-              </button>
-            )}
-
-            {user && (
-              <>
-                <div className="text-right text-xs text-slate-600">
-                  <p className="font-semibold">Bejelentkezve:</p>
-                  <p>{user.email}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Link
-                    href="/new-trip"
-                    className="py-2 px-4 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 transition text-sm"
-                  >
-                    Új utazás
-                  </Link>
-                  <button
-                    onClick={handleLogout}
-                    className="text-xs text-slate-500 underline"
-                  >
-                    Kijelentkezés
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </header>
-
-        {/* HA NINCS USER */}
-        {!user && (
-          <section className="max-w-md mx-auto bg-white shadow-lg rounded-2xl p-6 mt-6">
-            <h2 className="text-lg font-semibold mb-2 text-center">
+        <section className="w-full max-w-xl">
+          <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
+            <h2 className="text-xl font-semibold mb-3">
               Kezdd azzal, hogy bejelentkezel
             </h2>
-            <p className="text-sm text-slate-600 text-center mb-4">
-              Jelentkezz be Google-lel, hogy utazásokat hozhass létre, és
-              dokumentáld az élményeidet.
+            <p className="text-slate-600 mb-4 text-sm">
+              A jobb felső sarokban található{" "}
+              <span className="font-semibold">„Bejelentkezés Google-lel”</span>{" "}
+              gombbal tudsz belépni. Ezután létrehozhatod az első utazásodat,
+              rögzítheted a költségeket, és feltöltheted a fotókat és
+              dokumentumokat.
             </p>
-            <button
-              onClick={handleLogin}
-              className="w-full py-2 px-4 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 transition text-sm"
-            >
-              Bejelentkezés Google-lel
-            </button>
-          </section>
-        )}
+            <p className="text-xs text-slate-400">
+              (Itt később lehet valami menő bemutató / reklám blokk a TripLog
+              funkcióiról. 😉)
+            </p>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
-        {/* HA VAN USER → KERESŐ + LISTA */}
-        {user && (
-          <section className="mt-4">
-            {/* Kereső + szűrő sor */}
-            <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100 mb-4">
-              <div className="flex flex-col md:flex-row md:items-end gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold mb-1">
-                    Keresés (cím / desztináció)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Pl.: Horvátország, Zadar, Síelés..."
-                    className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
+  // --- BEJELENTKEZVE: UTAZÁS LISTA ---
+  return (
+    <main className="min-h-screen bg-slate-50 pb-16">
+      <div className="max-w-5xl mx-auto px-4 pt-10 space-y-8">
+        <section className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold text-slate-900">Utazásaid</h1>
+          <p className="text-sm text-slate-600">
+            Itt találod az összes saját és közös utazásodat. Használd a
+            keresőt és a szűrőket, ha sok utad van.
+          </p>
+        </section>
 
-                <div>
-                  <label className="block text-xs font-semibold mb-1">
-                    Típus
-                  </label>
-                  <div className="flex rounded-xl border bg-slate-50 overflow-hidden text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setFilterType("all")}
-                      className={`px-3 py-1.5 flex-1 ${
-                        filterType === "all"
-                          ? "bg-[#16ba53] text-white"
-                          : "text-slate-600"
-                      }`}
-                    >
-                      Összes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterType("own")}
-                      className={`px-3 py-1.5 flex-1 ${
-                        filterType === "own"
-                          ? "bg-[#16ba53] text-white"
-                          : "text-slate-600"
-                      }`}
-                    >
-                      Saját
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterType("shared")}
-                      className={`px-3 py-1.5 flex-1 ${
-                        filterType === "shared"
-                          ? "bg-[#16ba53] text-white"
-                          : "text-slate-600"
-                      }`}
-                    >
-                      Közös
-                    </button>
+        <section className="bg-white rounded-2xl shadow p-4 sm:p-6 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-4 sm:items-end">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                Keresés (cím / desztináció)
+              </label>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Pl.: Horvátország, Miskolc..."
+                className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                Típus
+              </label>
+              <select
+                value={filterType}
+                onChange={(e) =>
+                  setFilterType(e.target.value as "all" | "own" | "shared")
+                }
+                className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
+              >
+                <option value="all">Összes utazás</option>
+                <option value="own">Csak saját (te vagy a tulaj)</option>
+                <option value="shared">Közös utazások</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  Dátumtól
+                </label>
+                <input
+                  type="date"
+                  value={filterFrom}
+                  onChange={(e) => setFilterFrom(e.target.value)}
+                  className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  Dátumig
+                </label>
+                <input
+                  type="date"
+                  value={filterTo}
+                  onChange={(e) => setFilterTo(e.target.value)}
+                  className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          {loadingTrips ? (
+            <p className="text-sm text-slate-500">Utazások betöltése...</p>
+          ) : filteredTrips.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Nincs még egyetlen utazásod sem. Hozz létre egyet az{" "}
+              <span className="font-semibold">„Új utazás”</span> gombbal a jobb
+              felső sarokban.
+            </p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {filteredTrips.map((trip) => (
+                <Link
+                  key={trip.id}
+                  href={`/trip/${trip.id}`}
+                  className="block bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl px-4 py-3 transition"
+                >
+                  <div className="flex justify-between items-start gap-2 mb-1">
+                    <h3 className="font-semibold text-slate-900">
+                      {trip.title}
+                    </h3>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600">
+                      {trip.memberRole === "owner" ? "Tulajdonos" : "Útitárs"}
+                    </span>
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    A „Közös” opció a későbbi útitárs funkciónál lesz aktív.
+                  {trip.destination && (
+                    <p className="text-sm text-slate-700 mb-1">
+                      {trip.destination}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    {trip.date_from || trip.date_to
+                      ? `${trip.date_from ?? "?"} – ${trip.date_to ?? "?"}`
+                      : "Dátum nélkül"}
                   </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <div>
-                    <label className="block text-xs font-semibold mb-1">
-                      Dátum tól
-                    </label>
-                    <input
-                      type="date"
-                      className="border rounded-xl px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
-                      value={filterFrom}
-                      onChange={(e) => setFilterFrom(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1">
-                      Dátum ig
-                    </label>
-                    <input
-                      type="date"
-                      className="border rounded-xl px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
-                      value={filterTo}
-                      onChange={(e) => setFilterTo(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 text-xs text-slate-500 flex justify-between">
-                <span>
-                  Összes utazás: <strong>{trips.length}</strong>
-                </span>
-                <span>
-                  Szűrt találatok: <strong>{filteredTrips.length}</strong>
-                </span>
-              </div>
+                </Link>
+              ))}
             </div>
-
-            {/* Lista / hiba / üzenetek */}
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-semibold">Utazásaid</h2>
-            </div>
-
-            {loadingTrips && (
-              <p className="text-sm text-slate-500">Utazások betöltése...</p>
-            )}
-
-            {tripsError && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-4">
-                {tripsError}
-              </div>
-            )}
-
-            {!loadingTrips &&
-              !tripsError &&
-              filteredTrips.length === 0 &&
-              trips.length > 0 && (
-                <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-6 text-center text-sm text-slate-500">
-                  Nincs a szűréseknek megfelelő utazás. Próbáld módosítani a
-                  keresőt vagy a dátumokat.
-                </div>
-              )}
-
-            {!loadingTrips &&
-              !tripsError &&
-              trips.length === 0 && (
-                <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-6 text-center text-sm text-slate-500">
-                  Még nincs egyetlen utazásod sem.{" "}
-                  <Link
-                    href="/new-trip"
-                    className="text-[#16ba53] font-medium underline"
-                  >
-                    Hozz létre egyet most!
-                  </Link>
-                </div>
-              )}
-
-            {!loadingTrips && !tripsError && filteredTrips.length > 0 && (
-              <div className="grid gap-4 md:grid-cols-2">
-                {filteredTrips.map((trip) => {
-                  const from = formatDate(trip.date_from);
-                  const to = formatDate(trip.date_to);
-
-                  return (
-                    <Link
-                      key={trip.id}
-                      href={`/trip/${trip.id}`}
-                      className="bg-white rounded-2xl shadow-md p-4 flex flex-col justify-between border border-slate-100 hover:shadow-lg hover:border-[#16ba53]/30 transition"
-                    >
-                      <div>
-                        <h3 className="text-base font-semibold mb-1">
-                          {trip.title}
-                        </h3>
-                        <p className="text-sm text-slate-600 mb-2">
-                          {trip.destination || "Nincs megadott desztináció"}
-                        </p>
-                        {(from || to) && (
-                          <p className="text-xs text-slate-500">
-                            {from && to
-                              ? `${from} – ${to}`
-                              : from
-                              ? `Kezdés: ${from}`
-                              : `Befejezés: ${to}`}
-                          </p>
-                        )}
-                      </div>
-                      <div className="mt-3 flex items-center justify-between">
-                        <span className="text-[11px] uppercase tracking-wide text-slate-400">
-                          Saját utazás
-                        </span>
-                        <span className="text-xs text-[#16ba53] font-medium underline">
-                          Részletek
-                        </span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        )}
+          )}
+        </section>
       </div>
     </main>
   );
