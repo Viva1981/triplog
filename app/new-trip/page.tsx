@@ -97,18 +97,16 @@ export default function NewTripPage() {
         status: "accepted",
       });
 
-      if (memberError) {
+            if (memberError) {
         console.error(memberError);
         throw new Error(
           "Az utazás létrejött, de a tagság mentése közben hiba történt."
         );
       }
 
-      setSuccessMessage("Utazás sikeresen létrehozva!");
-      setTitle("");
-      setDestination("");
-      setDateFrom("");
-      setDateTo("");
+      // siker – irány az új utazás oldala
+      router.push(`/trip/${tripId}`);
+      return;
 
       // ✳️ KÉSŐBB: ha meglesz a /trip/[id] oldal, ide jöhet a redirect:
       // router.push(`/trip/${tripId}`);
