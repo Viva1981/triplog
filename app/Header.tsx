@@ -51,7 +51,8 @@ export function Header() {
       options: {
         redirectTo: `${window.location.origin}/`,
         scopes:
-          "openid email profile https://www.googleapis.com/auth/drive.readonly",
+          scopes:
+  "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file",
       },
     });
   };
@@ -62,15 +63,15 @@ export function Header() {
     router.refresh();
   };
 
-  const navLinkClass = (href: string) =>
-    `text-sm px-3 py-1.5 rounded-full ${
+  const navClass = (href: string) =>
+    `px-4 py-1.5 rounded-full text-sm font-medium transition ${
       pathname === href
-        ? "bg-[#16ba53]/10 text-[#16ba53] font-semibold"
-        : "text-slate-600 hover:bg-slate-100"
+        ? "bg-[#16ba53] text-white shadow"
+        : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
     }`;
 
   return (
-    <header className="bg-white border-b border-slate-100 sticky top-0 z-20">
+    <header className="bg-white border-b border-slate-100 sticky top-0 z-20 backdrop-blur">
       <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-full bg-[#16ba53] text-white flex items-center justify-center text-xs font-bold shadow-sm">
@@ -82,10 +83,10 @@ export function Header() {
         <div className="flex items-center gap-2">
           {user && (
             <>
-              <Link href="/new-trip" className={navLinkClass("/new-trip")}>
+              <Link href="/new-trip" className={navClass("/new-trip")}>
                 Új utazás
               </Link>
-              <Link href="/profile" className={navLinkClass("/profile")}>
+              <Link href="/profile" className={navClass("/profile")}>
                 Profil
               </Link>
             </>
@@ -93,9 +94,8 @@ export function Header() {
 
           {!loading && !user && (
             <button
-              type="button"
               onClick={handleLogin}
-              className="text-sm px-3 py-1.5 rounded-full bg-[#16ba53] text-white font-medium hover:opacity-90"
+              className="px-4 py-1.5 rounded-full bg-[#16ba53] text-white font-medium text-sm hover:opacity-90 shadow"
             >
               Bejelentkezés Google-lel
             </button>
@@ -103,9 +103,8 @@ export function Header() {
 
           {!loading && user && (
             <button
-              type="button"
               onClick={handleLogout}
-              className="text-xs px-3 py-1.5 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+              className="px-4 py-1.5 rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 text-sm"
             >
               Kijelentkezés
             </button>

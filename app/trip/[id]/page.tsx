@@ -18,6 +18,7 @@ type Trip = {
   date_from: string | null;
   date_to: string | null;
   notes: string | null;
+  drive_folder_id: string | null;
 };
 
 type Expense = {
@@ -71,6 +72,66 @@ function extractDriveFileId(url: string): string | null {
   }
 }
 
+// Trip mappa neve: 251115 - Miskolc Magyarország
+function buildTripFolderName(trip: Trip): string {
+  let prefix = "000000";
+  if (trip.date_from) {
+    const d = new Date(trip.date_from);
+    const yy = String(d.getFullYear()).slice(2);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    prefix = `${yy}${mm}${dd}`;
+  }
+  const dest = trip.destination || "Ismeretlen desztináció";
+  return `${prefix} - ${dest}`;
+}
+
+// TripLog gyökér mappa lekérdezése / létrehozása
+async function getOrCreateTripLogRootFolder(accessToken: string): Promise<string> {
+  const baseUrl = "https://www.googleapis.com/drive/v3/files";
+
+  // keresés: TripLog mappa a rootban
+  const query = encodeURIComponent(
+    "mimeType='application/vnd.google-apps.folder' and name='TripLog' and 'root' in parents and trashed=false"
+  );
+
+  const searchRes = await fetch(`${baseUrl}?q=${query}&fields=files(id,name)`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const searchData = await searchRes.json();
+  if (searchData.files && searchData.files.length > 0) {
+    return searchData.files[0].id as string;
+  }
+
+  // ha nincs, létrehozás
+  const createRes = await fetch(baseUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "TripLog",
+      mimeType: "application/vnd.google-apps.folder",
+      parents: ["root"],
+    }),
+  });
+
+  const created = await createRes.json();
+  if (!created.id) {
+    throw new Error("Nem sikerült létrehozni a TripLog mappát a Drive-on.");
+  }
+  return created.id as string;
+}
+
+// Fájlnévből levesszük a kiterjesztést
+function getBaseName(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/, "");
+}
+
 export default function TripDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -109,14 +170,14 @@ export default function TripDetailPage() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState<string | null>(null);
 
-  // Új fotó űrlap
+  // Új fotó űrlap (linkes)
   const [photoName, setPhotoName] = useState("");
   const [photoLink, setPhotoLink] = useState("");
   const [submittingPhoto, setSubmittingPhoto] = useState(false);
   const [photoSuccess, setPhotoSuccess] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
-  // Új dokumentum űrlap
+  // Új dokumentum űrlap (linkes)
   const [docName, setDocName] = useState("");
   const [docLink, setDocLink] = useState("");
   const [submittingDoc, setSubmittingDoc] = useState(false);
@@ -133,7 +194,7 @@ export default function TripDetailPage() {
       if (!user) {
         setUser(null);
         setLoadingUser(false);
-        router.push("/");
+        router.push("/"); // nincs login → vissza a főoldalra
         return;
       }
 
@@ -159,7 +220,9 @@ export default function TripDetailPage() {
 
       const { data, error } = await supabase
         .from("trips")
-        .select("id, owner_id, title, destination, date_from, date_to, notes")
+        .select(
+          "id, owner_id, title, destination, date_from, date_to, notes, drive_folder_id"
+        )
         .eq("id", tripId)
         .single();
 
@@ -347,7 +410,214 @@ export default function TripDetailPage() {
     }
   };
 
-  // Új fájl hozzáadása
+  // Trip-hez tartozó Drive mappa biztosítása (TripLog / YYMMDD - Dest)
+  const ensureTripFolder = async (accessToken: string): Promise<string> => {
+    if (!trip) {
+      throw new Error("Nincs utazás betöltve.");
+    }
+
+    // ha már el van mentve az ID, visszaadjuk
+    if (trip.drive_folder_id) {
+      return trip.drive_folder_id;
+    }
+
+    const rootId = await getOrCreateTripLogRootFolder(accessToken);
+    const baseUrl = "https://www.googleapis.com/drive/v3/files";
+    const folderName = buildTripFolderName(trip);
+
+    // megpróbáljuk megkeresni a TripLog mappán belül
+    const query = encodeURIComponent(
+      `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and '${rootId}' in parents and trashed=false`
+    );
+
+    const searchRes = await fetch(
+      `${baseUrl}?q=${query}&fields=files(id,name)`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    const searchData = await searchRes.json();
+    let folderId: string | null = null;
+
+    if (searchData.files && searchData.files.length > 0) {
+      folderId = searchData.files[0].id as string;
+    } else {
+      // ha nincs, létrehozzuk
+      const createRes = await fetch(baseUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: folderName,
+          mimeType: "application/vnd.google-apps.folder",
+          parents: [rootId],
+        }),
+      });
+
+      const created = await createRes.json();
+      if (!created.id) {
+        throw new Error("Nem sikerült létrehozni az utazás mappáját a Drive-on.");
+      }
+      folderId = created.id as string;
+    }
+
+    // mappa ID mentése a trips táblába + state frissítés
+    const { error } = await supabase
+      .from("trips")
+      .update({ drive_folder_id: folderId })
+      .eq("id", trip.id);
+
+    if (error) {
+      console.error("TRIP FOLDER UPDATE ERROR:", error);
+    }
+
+    setTrip((prev) =>
+      prev ? { ...prev, drive_folder_id: folderId } : prev
+    );
+
+    return folderId;
+  };
+
+  // Feltöltés Drive-ra + trip_files mentés
+  const uploadFileToDriveAndSave = async (
+    type: "photo" | "document",
+    file: File
+  ) => {
+    if (!user || !trip) return;
+
+    if (type === "photo") {
+      setPhotoError(null);
+      setPhotoSuccess(null);
+      setSubmittingPhoto(true);
+    } else {
+      setDocError(null);
+      setDocSuccess(null);
+      setSubmittingDoc(true);
+    }
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const accessToken = session?.provider_token as string | undefined;
+      if (!accessToken) {
+        throw new Error(
+          "Nem érhető el a Google hozzáférési token. Jelentkezz ki, majd be újra."
+        );
+      }
+
+      // Trip mappa biztosítása
+      const folderId = await ensureTripFolder(accessToken);
+
+      // multipart feltöltés
+      const boundary = "-------314159265358979323846";
+      const delimiter = `\r\n--${boundary}\r\n`;
+      const closeDelimiter = `\r\n--${boundary}--`;
+
+      const metadata = {
+        name: file.name,
+        parents: [folderId],
+      };
+
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64Data = btoa(binary);
+
+      const multipartRequestBody =
+        delimiter +
+        "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+        JSON.stringify(metadata) +
+        delimiter +
+        `Content-Type: ${
+          file.type || "application/octet-stream"
+        }\r\n` +
+        "Content-Transfer-Encoding: base64\r\n" +
+        "\r\n" +
+        base64Data +
+        closeDelimiter;
+
+      const uploadRes = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,thumbnailLink,webViewLink",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": `multipart/related; boundary=${boundary}`,
+          },
+          body: multipartRequestBody,
+        }
+      );
+
+      if (!uploadRes.ok) {
+        const txt = await uploadRes.text();
+        console.error("DRIVE UPLOAD ERROR:", txt);
+        throw new Error("Nem sikerült feltölteni a fájlt a Google Drive-ra.");
+      }
+
+      const uploaded = await uploadRes.json();
+      const fileId = uploaded.id as string;
+      const thumb =
+        (uploaded.thumbnailLink as string | undefined | null) ?? null;
+      const webView =
+        (uploaded.webViewLink as string | undefined | null) ??
+        `https://drive.google.com/file/d/${fileId}/view`;
+
+      const displayName = getBaseName(file.name);
+
+      const { data, error } = await supabase
+        .from("trip_files")
+        .insert({
+          trip_id: trip.id,
+          user_id: user.id,
+          type,
+          drive_file_id: fileId,
+          name: displayName,
+          mime_type: file.type || null,
+          thumbnail_link: thumb,
+          preview_link: webView,
+        })
+        .select(
+          "id, type, name, drive_file_id, thumbnail_link, preview_link"
+        )
+        .single();
+
+      if (error || !data) {
+        console.error("TRIP_FILES INSERT ERROR:", error);
+        throw new Error("A fájl feltöltése sikerült, de az app mentése nem.");
+      }
+
+      const newFile = data as TripFile;
+      if (type === "photo") {
+        setPhotoFiles((prev) => [...prev, newFile]);
+        setPhotoSuccess("Fotó sikeresen feltöltve a Drive-ra.");
+      } else {
+        setDocFiles((prev) => [...prev, newFile]);
+        setDocSuccess("Dokumentum sikeresen feltöltve a Drive-ra.");
+      }
+    } catch (err: any) {
+      console.error("UPLOAD AND SAVE ERROR:", err);
+      if (type === "photo") {
+        setPhotoError(err?.message ?? "Ismeretlen hiba történt.");
+      } else {
+        setDocError(err?.message ?? "Ismeretlen hiba történt.");
+      }
+    } finally {
+      if (type === "photo") setSubmittingPhoto(false);
+      else setSubmittingDoc(false);
+    }
+  };
+
+  // Linkes fájl hozzáadása (a régi logika)
   const handleAddFile = async (type: "photo" | "document") => {
     if (!user || !trip) return;
 
@@ -563,7 +833,6 @@ export default function TripDetailPage() {
   );
   const mainCurrency = expenses[0]?.currency || expenseCurrency || "";
 
-  // szöveges kategória-statisztika a diagram helyett
   const categoryTotals = (() => {
     const map = new Map<string, number>();
     expenses.forEach((e) => {
@@ -627,8 +896,8 @@ export default function TripDetailPage() {
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">Fotók</h2>
             <p className="text-xs text-slate-500 mb-2">
-              Töltsd fel a képeket a saját Google Drive-odra, állítsd be
-              megosztásra, majd illeszd be ide a megosztási linket.
+              Töltsd fel a képeket a saját Google Drive-odra, vagy töltsd fel
+              közvetlenül az eszközödről – mi elmentjük a TripLog mappádba.
             </p>
 
             <div className="space-y-2 mb-3">
@@ -646,7 +915,7 @@ export default function TripDetailPage() {
               <input
                 type="text"
                 className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
-                placeholder="Google Drive megosztási link"
+                placeholder="Google Drive megosztási link (opcionális)"
                 value={photoLink}
                 onChange={(e) => {
                   setPhotoLink(e.target.value);
@@ -654,6 +923,33 @@ export default function TripDetailPage() {
                   setPhotoSuccess(null);
                 }}
               />
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleAddFile("photo")}
+                  disabled={submittingPhoto}
+                  className="flex-1 py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
+                >
+                  {submittingPhoto ? "Mentés..." : "Fotó hozzáadása linkkel"}
+                </button>
+
+                <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 text-center cursor-pointer hover:bg-slate-50">
+                  {submittingPhoto ? "Feltöltés..." : "Feltöltés eszközről"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        uploadFileToDriveAndSave("photo", file);
+                        e.target.value = "";
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+
               {photoError && (
                 <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
                   {photoError}
@@ -664,14 +960,6 @@ export default function TripDetailPage() {
                   {photoSuccess}
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => handleAddFile("photo")}
-                disabled={submittingPhoto}
-                className="w-full py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
-              >
-                {submittingPhoto ? "Hozzáadás..." : "Fotó hozzáadása"}
-              </button>
             </div>
 
             {loadingFiles && (
@@ -747,8 +1035,8 @@ export default function TripDetailPage() {
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">Dokumentumok</h2>
             <p className="text-xs text-slate-500 mb-2">
-              Foglalások, beszállókártyák, PDF-ek – töltsd fel Drive-ra, majd
-              illeszd be a linket.
+              Foglalások, beszállókártyák, jegyek – töltsd fel Drive-ra
+              közvetlenül az eszközödről, vagy illeszd be a megosztási linket.
             </p>
 
             <div className="space-y-2 mb-3">
@@ -766,7 +1054,7 @@ export default function TripDetailPage() {
               <input
                 type="text"
                 className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
-                placeholder="Google Drive megosztási link"
+                placeholder="Google Drive megosztási link (opcionális)"
                 value={docLink}
                 onChange={(e) => {
                   setDocLink(e.target.value);
@@ -774,6 +1062,32 @@ export default function TripDetailPage() {
                   setDocSuccess(null);
                 }}
               />
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleAddFile("document")}
+                  disabled={submittingDoc}
+                  className="flex-1 py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
+                >
+                  {submittingDoc ? "Mentés..." : "Dokumentum hozzáadása linkkel"}
+                </button>
+
+                <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 text-center cursor-pointer hover:bg-slate-50">
+                  {submittingDoc ? "Feltöltés..." : "Feltöltés eszközről"}
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        uploadFileToDriveAndSave("document", file);
+                        e.target.value = "";
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+
               {docError && (
                 <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
                   {docError}
@@ -784,14 +1098,6 @@ export default function TripDetailPage() {
                   {docSuccess}
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => handleAddFile("document")}
-                disabled={submittingDoc}
-                className="w-full py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
-              >
-                {submittingDoc ? "Hozzáadás..." : "Dokumentum hozzáadása"}
-              </button>
             </div>
 
             {!loadingFiles && docFiles.length === 0 && (
