@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 
 type User = {
   id: string;
@@ -39,6 +47,17 @@ type TripFile = {
   preview_link: string | null;
 };
 
+const COLORS = [
+  "#16ba53",
+  "#0f766e",
+  "#2563eb",
+  "#7c3aed",
+  "#f97316",
+  "#e11d48",
+  "#059669",
+  "#0ea5e9",
+];
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
   try {
@@ -56,18 +75,15 @@ function formatDate(dateStr: string | null): string {
 // Google Drive megosztási linkből file ID kiszedése
 function extractDriveFileId(url: string): string | null {
   try {
-    // Ha van ?id= paraméter
     const u = new URL(url);
     const idParam = u.searchParams.get("id");
     if (idParam) return idParam;
 
-    // /d/{FILE_ID}/ formátum
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (match && match[1]) return match[1];
 
     return null;
   } catch {
-    // Ha nem érvényes URL, próbáljuk egyszerű stringként
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (match && match[1]) return match[1];
     return null;
@@ -136,7 +152,7 @@ export default function TripDetailPage() {
       if (!user) {
         setUser(null);
         setLoadingUser(false);
-        router.push("/"); // nincs login → vissza a főoldalra
+        router.push("/");
         return;
       }
 
@@ -350,7 +366,7 @@ export default function TripDetailPage() {
     }
   };
 
-  // Új fájl hozzáadása (photo/document)
+  // Új fájl hozzáadása
   const handleAddFile = async (type: "photo" | "document") => {
     if (!user || !trip) return;
 
@@ -564,6 +580,26 @@ export default function TripDetailPage() {
     (sum, e) => sum + Number(e.amount || 0),
     0
   );
+
+  const categoryStats = useMemo(
+    () => {
+      if (!expenses.length) return [] as { name: string; value: number }[];
+
+      const map = new Map<string, number>();
+      expenses.forEach((e) => {
+        const key = e.category?.trim() || "Egyéb";
+        map.set(key, (map.get(key) ?? 0) + Number(e.amount || 0));
+      });
+
+      return Array.from(map.entries()).map(([name, value]) => ({
+        name,
+        value,
+      }));
+    },
+    [expenses]
+  );
+
+  const mainCurrency = expenses[0]?.currency || "";
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -1025,7 +1061,7 @@ export default function TripDetailPage() {
 
               {!loadingExpenses && expenses.length > 0 && (
                 <div className="mt-2 text-[11px] text-slate-600 font-semibold">
-                  Összesen: {totalAmount.toFixed(2)} {expenseCurrency}
+                  Összesen: {totalAmount.toFixed(2)} {mainCurrency}
                 </div>
               )}
             </div>
@@ -1038,13 +1074,59 @@ export default function TripDetailPage() {
             <h2 className="text-sm font-semibold mb-2">
               Költségek statisztika
             </h2>
-            <p className="text-xs text-slate-500">
-              Itt fogsz kördiagramot látni arról, mire mennyit költöttetek az
-              utazás során.
-            </p>
-            <div className="mt-3 text-[11px] text-slate-400">
-              Funkció hamarosan érkezik. 📊
-            </div>
+
+            {expenses.length === 0 && (
+              <p className="text-xs text-slate-500">
+                Még nincs elég adat a statisztikához. Rögzíts néhány költséget!
+              </p>
+            )}
+
+            {expenses.length > 0 && categoryStats.length > 0 && (
+              <>
+                <p className="text-xs text-slate-500 mb-3">
+                  Összes költés:{" "}
+                  <span className="font-semibold">
+                    {totalAmount.toFixed(2)} {mainCurrency}
+                  </span>
+                </p>
+                <div className="w-full h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categoryStats}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={70}
+                        label={({ name, percent }) =>
+                          `${name} ${(percent * 100).toFixed(0)}%`
+                        }
+                      >
+                        {categoryStats.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={COLORS[index % COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: any) =>
+                          `${Number(value).toFixed(2)} ${
+                            mainCurrency || ""
+                          }`
+                        }
+                      />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-400">
+                  A diagram kategóriánként összegzi az elköltött összegeket.
+                  Ha több pénznemet használsz, a statisztika csak közelítő.
+                </p>
+              </>
+            )}
           </div>
         </section>
       </div>
