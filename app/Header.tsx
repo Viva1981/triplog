@@ -50,11 +50,13 @@ export function Header() {
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/`,
-        // 🔴 ITT KÉRJÜK A DRIVE JOGOKAT
+        // Itt kérjük az összes szükséges scope-ot
         scopes:
           "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file",
-        // 🔴 KÉNYSZERÍTETT TELJES CONSENT KÉPERNYŐ
-        prompt: "consent",
+        // Extra paraméterek az OAuth kéréshez (itt tudjuk megadni a promptot)
+        queryParams: {
+          prompt: "consent",
+        },
       },
     });
   };
