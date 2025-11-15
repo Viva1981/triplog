@@ -1,17 +1,9 @@
 "use client";
 
-import { useEffect, useState, FormEvent, useMemo } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
 
 type User = {
   id: string;
@@ -46,17 +38,6 @@ type TripFile = {
   thumbnail_link: string | null;
   preview_link: string | null;
 };
-
-const COLORS = [
-  "#16ba53",
-  "#0f766e",
-  "#2563eb",
-  "#7c3aed",
-  "#f97316",
-  "#e11d48",
-  "#059669",
-  "#0ea5e9",
-];
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
@@ -580,26 +561,17 @@ export default function TripDetailPage() {
     (sum, e) => sum + Number(e.amount || 0),
     0
   );
+  const mainCurrency = expenses[0]?.currency || expenseCurrency || "";
 
-  const categoryStats = useMemo(
-    () => {
-      if (!expenses.length) return [] as { name: string; value: number }[];
-
-      const map = new Map<string, number>();
-      expenses.forEach((e) => {
-        const key = e.category?.trim() || "Egyéb";
-        map.set(key, (map.get(key) ?? 0) + Number(e.amount || 0));
-      });
-
-      return Array.from(map.entries()).map(([name, value]) => ({
-        name,
-        value,
-      }));
-    },
-    [expenses]
-  );
-
-  const mainCurrency = expenses[0]?.currency || "";
+  // szöveges kategória-statisztika a diagram helyett
+  const categoryTotals = (() => {
+    const map = new Map<string, number>();
+    expenses.forEach((e) => {
+      const key = e.category?.trim() || "Egyéb";
+      map.set(key, (map.get(key) ?? 0) + Number(e.amount || 0));
+    });
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
+  })();
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -1068,7 +1040,7 @@ export default function TripDetailPage() {
           </div>
         </section>
 
-        {/* Költségek statisztika – teljes szélesség */}
+        {/* Költségek statisztika – szöveges összefoglaló */}
         <section className="mt-4">
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">
@@ -1081,7 +1053,7 @@ export default function TripDetailPage() {
               </p>
             )}
 
-            {expenses.length > 0 && categoryStats.length > 0 && (
+            {expenses.length > 0 && (
               <>
                 <p className="text-xs text-slate-500 mb-3">
                   Összes költés:{" "}
@@ -1089,41 +1061,25 @@ export default function TripDetailPage() {
                     {totalAmount.toFixed(2)} {mainCurrency}
                   </span>
                 </p>
-                <div className="w-full h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryStats}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={70}
-                        label={({ name, percent }) =>
-                          `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                        }
-                      >
-                        {categoryStats.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: any) =>
-                          `${Number(value).toFixed(2)} ${
-                            mainCurrency || ""
-                          }`
-                        }
-                      />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
+
+                <div className="space-y-1 text-xs">
+                  {categoryTotals.map((cat) => (
+                    <div
+                      key={cat.name}
+                      className="flex items-center justify-between border-b border-slate-100 py-1"
+                    >
+                      <span className="text-slate-600">{cat.name}</span>
+                      <span className="font-semibold">
+                        {cat.value.toFixed(2)} {mainCurrency}
+                      </span>
+                    </div>
+                  ))}
                 </div>
+
                 <p className="mt-2 text-[11px] text-slate-400">
-                  A diagram kategóriánként összegzi az elköltött összegeket.
-                  Ha több pénznemet használsz, a statisztika csak közelítő.
+                  A kategóriák a rögzített költségek „Kategória” mezője alapján
+                  számolódnak. Ha több pénznemet használsz, az összesítés csak
+                  közelítő.
                 </p>
               </>
             )}
