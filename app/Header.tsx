@@ -51,8 +51,7 @@ export function Header() {
       options: {
         redirectTo: `${window.location.origin}/`,
         scopes:
-          scopes:
-  "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file",
+          "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file",
       },
     });
   };
