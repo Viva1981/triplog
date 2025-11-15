@@ -30,6 +30,15 @@ type Expense = {
   payment_method: string | null;
 };
 
+type TripFile = {
+  id: string;
+  type: "photo" | "document";
+  name: string;
+  drive_file_id: string;
+  thumbnail_link: string | null;
+  preview_link: string | null;
+};
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
   try {
@@ -41,6 +50,27 @@ function formatDate(dateStr: string | null): string {
     }).format(d);
   } catch {
     return dateStr ?? "";
+  }
+}
+
+// Google Drive megosztási linkből file ID kiszedése
+function extractDriveFileId(url: string): string | null {
+  try {
+    // Ha van ?id= paraméter
+    const u = new URL(url);
+    const idParam = u.searchParams.get("id");
+    if (idParam) return idParam;
+
+    // /d/{FILE_ID}/ formátum
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) return match[1];
+
+    return null;
+  } catch {
+    // Ha nem érvényes URL, próbáljuk egyszerű stringként
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) return match[1];
+    return null;
   }
 }
 
@@ -66,7 +96,7 @@ export default function TripDetailPage() {
   const [loadingExpenses, setLoadingExpenses] = useState(false);
   const [expensesError, setExpensesError] = useState<string | null>(null);
 
-  // Új költség űrlap állapot
+  // Új költség űrlap
   const [expenseDate, setExpenseDate] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseNote, setExpenseNote] = useState("");
@@ -75,6 +105,26 @@ export default function TripDetailPage() {
   const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
   const [submittingExpense, setSubmittingExpense] = useState(false);
   const [expenseSuccess, setExpenseSuccess] = useState<string | null>(null);
+
+  // Fájlok állapot
+  const [photoFiles, setPhotoFiles] = useState<TripFile[]>([]);
+  const [docFiles, setDocFiles] = useState<TripFile[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
+
+  // Új fotó űrlap
+  const [photoName, setPhotoName] = useState("");
+  const [photoLink, setPhotoLink] = useState("");
+  const [submittingPhoto, setSubmittingPhoto] = useState(false);
+  const [photoSuccess, setPhotoSuccess] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  // Új dokumentum űrlap
+  const [docName, setDocName] = useState("");
+  const [docLink, setDocLink] = useState("");
+  const [submittingDoc, setSubmittingDoc] = useState(false);
+  const [docSuccess, setDocSuccess] = useState<string | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
 
   // User betöltése
   useEffect(() => {
@@ -172,6 +222,46 @@ export default function TripDetailPage() {
     }
   }, [params, user, trip]);
 
+  // Fájlok betöltése
+  useEffect(() => {
+    const fetchFiles = async () => {
+      const tripId = params?.id;
+      if (!tripId || Array.isArray(tripId) || !user) {
+        setPhotoFiles([]);
+        setDocFiles([]);
+        return;
+      }
+
+      setLoadingFiles(true);
+      setFilesError(null);
+
+      const { data, error } = await supabase
+        .from("trip_files")
+        .select(
+          "id, type, name, drive_file_id, thumbnail_link, preview_link"
+        )
+        .eq("trip_id", tripId)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        console.error("FILES FETCH ERROR:", error);
+        setFilesError(
+          error.message ?? "Nem sikerült betölteni a fájlokat."
+        );
+      } else {
+        const all = (data ?? []) as TripFile[];
+        setPhotoFiles(all.filter((f) => f.type === "photo"));
+        setDocFiles(all.filter((f) => f.type === "document"));
+      }
+
+      setLoadingFiles(false);
+    };
+
+    if (user && trip) {
+      fetchFiles();
+    }
+  }, [params, user, trip]);
+
   const handleExpenseSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user || !trip) return;
@@ -239,14 +329,12 @@ export default function TripDetailPage() {
     setNoteSuccess(null);
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("trips")
         .update({ notes: noteInput })
-        .eq("id", trip.id)
-        .select("notes")
-        .single();
+        .eq("id", trip.id);
 
-      if (error || !data) {
+      if (error) {
         console.error("NOTE UPDATE ERROR:", error);
         setNoteError(
           error?.message ?? "Nem sikerült elmenteni a jegyzetet."
@@ -259,6 +347,184 @@ export default function TripDetailPage() {
       setNoteError(err?.message ?? "Ismeretlen hiba történt.");
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  // Új fájl hozzáadása (photo/document)
+  const handleAddFile = async (type: "photo" | "document") => {
+    if (!user || !trip) return;
+
+    if (type === "photo") {
+      setPhotoError(null);
+      setPhotoSuccess(null);
+      if (!photoName.trim() || !photoLink.trim()) {
+        setPhotoError("Név és Drive link megadása kötelező.");
+        return;
+      }
+    } else {
+      setDocError(null);
+      setDocSuccess(null);
+      if (!docName.trim() || !docLink.trim()) {
+        setDocError("Név és Drive link megadása kötelező.");
+        return;
+      }
+    }
+
+    const rawLink = type === "photo" ? photoLink.trim() : docLink.trim();
+    const name = type === "photo" ? photoName.trim() : docName.trim();
+
+    const fileId = extractDriveFileId(rawLink);
+    if (!fileId) {
+      if (type === "photo") {
+        setPhotoError("Nem sikerült értelmezni a Drive linket.");
+      } else {
+        setDocError("Nem sikerült értelmezni a Drive linket.");
+      }
+      return;
+    }
+
+    const thumbnail = `https://drive.google.com/thumbnail?&id=${fileId}`;
+    const preview = `https://drive.google.com/file/d/${fileId}/view`;
+
+    if (type === "photo") setSubmittingPhoto(true);
+    else setSubmittingDoc(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("trip_files")
+        .insert({
+          trip_id: trip.id,
+          user_id: user.id,
+          type,
+          drive_file_id: fileId,
+          name,
+          mime_type: null,
+          thumbnail_link: thumbnail,
+          preview_link: preview,
+        })
+        .select(
+          "id, type, name, drive_file_id, thumbnail_link, preview_link"
+        )
+        .single();
+
+      if (error || !data) {
+        console.error("FILE INSERT ERROR:", error);
+        if (type === "photo") {
+          setPhotoError(
+            error?.message ?? "Nem sikerült elmenteni a fotót."
+          );
+        } else {
+          setDocError(
+            error?.message ?? "Nem sikerült elmenteni a dokumentumot."
+          );
+        }
+      } else {
+        const newFile = data as TripFile;
+        if (type === "photo") {
+          setPhotoFiles((prev) => [...prev, newFile]);
+          setPhotoSuccess("Fotó sikeresen hozzáadva.");
+          setPhotoName("");
+          setPhotoLink("");
+        } else {
+          setDocFiles((prev) => [...prev, newFile]);
+          setDocSuccess("Dokumentum sikeresen hozzáadva.");
+          setDocName("");
+          setDocLink("");
+        }
+      }
+    } catch (err: any) {
+      console.error("FILE ADD ERROR:", err);
+      if (type === "photo") {
+        setPhotoError(err?.message ?? "Ismeretlen hiba történt.");
+      } else {
+        setDocError(err?.message ?? "Ismeretlen hiba történt.");
+      }
+    } finally {
+      if (type === "photo") setSubmittingPhoto(false);
+      else setSubmittingDoc(false);
+    }
+  };
+
+  const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
+    if (!confirm("Biztosan törlöd ezt az elemet?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("trip_files")
+        .delete()
+        .eq("id", fileId);
+
+      if (error) {
+        console.error("FILE DELETE ERROR:", error);
+        if (type === "photo") {
+          setPhotoError(
+            error?.message ?? "Nem sikerült törölni a fotót."
+          );
+        } else {
+          setDocError(
+            error?.message ?? "Nem sikerült törölni a dokumentumot."
+          );
+        }
+      } else {
+        if (type === "photo") {
+          setPhotoFiles((prev) => prev.filter((f) => f.id !== fileId));
+        } else {
+          setDocFiles((prev) => prev.filter((f) => f.id !== fileId));
+        }
+      }
+    } catch (err: any) {
+      console.error("FILE DELETE ERROR:", err);
+      if (type === "photo") {
+        setPhotoError(err?.message ?? "Ismeretlen hiba történt.");
+      } else {
+        setDocError(err?.message ?? "Ismeretlen hiba történt.");
+      }
+    }
+  };
+
+  const handleRenameFile = async (file: TripFile) => {
+    const newName = prompt("Új név:", file.name);
+    if (!newName || newName.trim() === "" || newName === file.name) return;
+
+    try {
+      const { error } = await supabase
+        .from("trip_files")
+        .update({ name: newName.trim() })
+        .eq("id", file.id);
+
+      if (error) {
+        console.error("FILE RENAME ERROR:", error);
+        if (file.type === "photo") {
+          setPhotoError(
+            error?.message ?? "Nem sikerült átnevezni a fotót."
+          );
+        } else {
+          setDocError(
+            error?.message ?? "Nem sikerült átnevezni a dokumentumot."
+          );
+        }
+      } else {
+        if (file.type === "photo") {
+          setPhotoFiles((prev) =>
+            prev.map((f) =>
+              f.id === file.id ? { ...f, name: newName.trim() } : f
+            )
+          );
+        } else {
+          setDocFiles((prev) =>
+            prev.map((f) =>
+              f.id === file.id ? { ...f, name: newName.trim() } : f
+            )
+          );
+        }
+      }
+    } catch (err: any) {
+      console.error("FILE RENAME ERROR:", err);
+      if (file.type === "photo") {
+        setPhotoError(err?.message ?? "Ismeretlen hiba történt.");
+      } else {
+        setDocError(err?.message ?? "Ismeretlen hiba történt.");
+      }
     }
   };
 
@@ -352,24 +618,218 @@ export default function TripDetailPage() {
           {/* Fotók */}
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">Fotók</h2>
-            <p className="text-xs text-slate-500">
-              Ide kerülnek majd az utazáshoz tartozó fotók a Google Drive-ból.
+            <p className="text-xs text-slate-500 mb-2">
+              Töltsd fel a képeket a saját Google Drive-odra, állítsd be
+              megosztásra, majd illeszd be ide a megosztási linket.
             </p>
-            <div className="mt-3 text-[11px] text-slate-400">
-              Funkció hamarosan érkezik. 📷
+
+            <div className="space-y-2 mb-3">
+              <input
+                type="text"
+                className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
+                placeholder="Kép neve (pl.: Tengerpart naplemente)"
+                value={photoName}
+                onChange={(e) => {
+                  setPhotoName(e.target.value);
+                  setPhotoError(null);
+                  setPhotoSuccess(null);
+                }}
+              />
+              <input
+                type="text"
+                className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
+                placeholder="Google Drive megosztási link"
+                value={photoLink}
+                onChange={(e) => {
+                  setPhotoLink(e.target.value);
+                  setPhotoError(null);
+                  setPhotoSuccess(null);
+                }}
+              />
+              {photoError && (
+                <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
+                  {photoError}
+                </div>
+              )}
+              {photoSuccess && (
+                <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
+                  {photoSuccess}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => handleAddFile("photo")}
+                disabled={submittingPhoto}
+                className="w-full py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
+              >
+                {submittingPhoto ? "Hozzáadás..." : "Fotó hozzáadása"}
+              </button>
             </div>
+
+            {loadingFiles && (
+              <p className="text-[11px] text-slate-500">
+                Fotók betöltése...
+              </p>
+            )}
+
+            {filesError && (
+              <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1 mb-2">
+                {filesError}
+              </div>
+            )}
+
+            {!loadingFiles && photoFiles.length === 0 && (
+              <p className="text-[11px] text-slate-500">
+                Még nincs egyetlen fotó sem ehhez az utazáshoz.
+              </p>
+            )}
+
+            {!loadingFiles && photoFiles.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                {photoFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    className="border border-slate-200 rounded-xl p-1.5 flex flex-col text-[11px]"
+                  >
+                    <a
+                      href={file.preview_link || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block mb-1"
+                    >
+                      {file.thumbnail_link ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={file.thumbnail_link}
+                          alt={file.name}
+                          className="w-full h-24 object-cover rounded-lg"
+                        />
+                      ) : (
+                        <div className="w-full h-24 flex items-center justify-center bg-slate-100 rounded-lg">
+                          Nincs előnézet
+                        </div>
+                      )}
+                    </a>
+                    <div className="flex-1">
+                      <p className="font-medium line-clamp-2">{file.name}</p>
+                    </div>
+                    <div className="mt-1 flex justify-between gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleRenameFile(file)}
+                        className="text-[10px] text-slate-500 underline"
+                      >
+                        Átnevezés
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFile(file.id, "photo")}
+                        className="text-[10px] text-red-500 underline"
+                      >
+                        Törlés
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Dokumentumok */}
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">Dokumentumok</h2>
-            <p className="text-xs text-slate-500">
-              Itt fognak megjelenni a beszállókártyák, foglalások, szerződések
-              és egyéb fájlok.
+            <p className="text-xs text-slate-500 mb-2">
+              Foglalások, beszállókártyák, PDF-ek – töltsd fel Drive-ra, majd
+              illeszd be a linket.
             </p>
-            <div className="mt-3 text-[11px] text-slate-400">
-              Funkció hamarosan érkezik. 📄
+
+            <div className="space-y-2 mb-3">
+              <input
+                type="text"
+                className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
+                placeholder="Dokumentum neve (pl.: Repülőjegy PDF)"
+                value={docName}
+                onChange={(e) => {
+                  setDocName(e.target.value);
+                  setDocError(null);
+                  setDocSuccess(null);
+                }}
+              />
+              <input
+                type="text"
+                className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
+                placeholder="Google Drive megosztási link"
+                value={docLink}
+                onChange={(e) => {
+                  setDocLink(e.target.value);
+                  setDocError(null);
+                  setDocSuccess(null);
+                }}
+              />
+              {docError && (
+                <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
+                  {docError}
+                </div>
+              )}
+              {docSuccess && (
+                <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
+                  {docSuccess}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => handleAddFile("document")}
+                disabled={submittingDoc}
+                className="w-full py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
+              >
+                {submittingDoc ? "Hozzáadás..." : "Dokumentum hozzáadása"}
+              </button>
             </div>
+
+            {!loadingFiles && docFiles.length === 0 && (
+              <p className="text-[11px] text-slate-500">
+                Még nincs egyetlen dokumentum sem ehhez az utazáshoz.
+              </p>
+            )}
+
+            {!loadingFiles && docFiles.length > 0 && (
+              <div className="mt-2 grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1">
+                {docFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    className="border border-slate-200 rounded-xl p-2 flex items-center justify-between text-[11px]"
+                  >
+                    <div className="flex-1 mr-2">
+                      <p className="font-medium line-clamp-2">{file.name}</p>
+                      <a
+                        href={file.preview_link || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-[#16ba53] underline"
+                      >
+                        Megnyitás Drive-ban
+                      </a>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleRenameFile(file)}
+                        className="text-[10px] text-slate-500 underline"
+                      >
+                        Átnevezés
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFile(file.id, "document")}
+                        className="text-[10px] text-red-500 underline"
+                      >
+                        Törlés
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Jegyzet */}
@@ -419,7 +879,6 @@ export default function TripDetailPage() {
               Itt tudod rögzíteni, hogy ki mit fizetett az utazás során.
             </p>
 
-            {/* Költség űrlap */}
             <form onSubmit={handleExpenseSubmit} className="space-y-2 mb-3">
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -522,7 +981,6 @@ export default function TripDetailPage() {
               </button>
             </form>
 
-            {/* Költségek lista */}
             <div className="border-t border-slate-100 pt-2">
               {loadingExpenses && (
                 <p className="text-[11px] text-slate-500">
