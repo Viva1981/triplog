@@ -87,7 +87,9 @@ function buildTripFolderName(trip: Trip): string {
 }
 
 // TripLog gyökér mappa lekérdezése / létrehozása
-async function getOrCreateTripLogRootFolder(accessToken: string): Promise<string> {
+async function getOrCreateTripLogRootFolder(
+  accessToken: string
+): Promise<string> {
   const baseUrl = "https://www.googleapis.com/drive/v3/files";
 
   // keresés: TripLog mappa a rootban
@@ -120,10 +122,17 @@ async function getOrCreateTripLogRootFolder(accessToken: string): Promise<string
     }),
   });
 
+  if (!createRes.ok) {
+    const txt = await createRes.text();
+    console.error("DRIVE ROOT FOLDER CREATE ERROR:", txt);
+    throw new Error("Nem sikerült létrehozni a TripLog mappát a Drive-on.");
+  }
+
   const created = await createRes.json();
   if (!created.id) {
     throw new Error("Nem sikerült létrehozni a TripLog mappát a Drive-on.");
   }
+
   return created.id as string;
 }
 
@@ -411,16 +420,39 @@ export default function TripDetailPage() {
   };
 
   // Trip-hez tartozó Drive mappa biztosítása (TripLog / YYMMDD - Dest)
-  const ensureTripFolder = async (accessToken: string): Promise<string> => {
-    if (!trip) {
-      throw new Error("Nincs utazás betöltve.");
-    }
+const ensureTripFolder = async (accessToken: string): Promise<string> => {
+  if (!trip) {
+    throw new Error("Nincs utazás betöltve.");
+  }
 
-    // ha már el van mentve az ID, visszaadjuk
-    if (trip.drive_folder_id) {
-      return trip.drive_folder_id;
-    }
+  let folderId = trip.drive_folder_id ?? null;
 
+  // Ha van eltárolt mappa ID, ellenőrizzük, hogy még létezik-e
+  if (folderId) {
+    const checkRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (checkRes.status === 404) {
+      console.warn("TRIP FOLDER GONE, RECREATING...");
+      folderId = null;
+    } else if (!checkRes.ok) {
+      const txt = await checkRes.text();
+      console.error("DRIVE FOLDER CHECK ERROR:", txt);
+      // ha jogosultság hiba van, egyértelműbb üzenetet dobunk
+      throw new Error(
+        "Nincs elég jogosultság a Google Drive mappa eléréséhez. Próbáld meg eltávolítani az app hozzáférését a Google fiókodból, majd újra bejelentkezni."
+      );
+    }
+  }
+
+  // Ha nincs (vagy már nem létező) mappa ID, létrehozzuk
+  if (!folderId) {
     const rootId = await getOrCreateTripLogRootFolder(accessToken);
     const baseUrl = "https://www.googleapis.com/drive/v3/files";
     const folderName = buildTripFolderName(trip);
@@ -440,8 +472,6 @@ export default function TripDetailPage() {
     );
 
     const searchData = await searchRes.json();
-    let folderId: string | null = null;
-
     if (searchData.files && searchData.files.length > 0) {
       folderId = searchData.files[0].id as string;
     } else {
@@ -459,10 +489,21 @@ export default function TripDetailPage() {
         }),
       });
 
+      if (!createRes.ok) {
+        const txt = await createRes.text();
+        console.error("TRIP FOLDER CREATE ERROR:", txt);
+        throw new Error(
+          "Nem sikerült létrehozni az utazás mappáját a Drive-on."
+        );
+      }
+
       const created = await createRes.json();
       if (!created.id) {
-        throw new Error("Nem sikerült létrehozni az utazás mappáját a Drive-on.");
+        throw new Error(
+          "Nem sikerült létrehozni az utazás mappáját a Drive-on."
+        );
       }
+
       folderId = created.id as string;
     }
 
@@ -479,9 +520,10 @@ export default function TripDetailPage() {
     setTrip((prev) =>
       prev ? { ...prev, drive_folder_id: folderId } : prev
     );
+  }
 
-    return folderId;
-  };
+  return folderId;
+};
 
   // Feltöltés Drive-ra + trip_files mentés
   const uploadFileToDriveAndSave = async (
