@@ -12,24 +12,31 @@ type JoinState =
   | "error"
   | "invalid-link";
 
+type TripInvite = {
+  trip_id: string;
+  invited_email: string;
+  role: "owner" | "member";
+  status: "pending" | "accepted" | "cancelled" | "expired";
+};
+
 export default function JoinTripPage() {
   const router = useRouter();
   const params = useParams();
   const [state, setState] = useState<JoinState>("checking");
   const [message, setMessage] = useState<string | null>(null);
 
-  // route param kinyerése biztonságosan
-  const rawTripId = params?.tripId;
-  const tripId =
-    typeof rawTripId === "string" ? rawTripId : rawTripId?.[0] ?? undefined;
+  // A route param most már TOKEN, nem tripId
+  const rawToken = params?.tripId;
+  const token =
+    typeof rawToken === "string" ? rawToken : rawToken?.[0] ?? undefined;
 
   useEffect(() => {
     const run = async () => {
       setState("checking");
       setMessage(null);
 
-      // 1) Ha valamiért nincs tripId a URL-ben → hibás link
-      if (!tripId) {
+      // 1) Ha nincs token → hibás link
+      if (!token) {
         setState("invalid-link");
         setMessage(
           "Érvénytelen meghívó link. Ellenőrizd, hogy teljes egészében másoltad-e ki."
@@ -58,7 +65,64 @@ export default function JoinTripPage() {
         return;
       }
 
-      // 3) Megnézzük, hogy már tag-e a user (trip_members)
+      // 3) Meghívó lekérdezése token alapján
+      const { data: invite, error: inviteError } = await supabase
+        .from("trip_invites")
+        .select("trip_id, invited_email, role, status")
+        .eq("token", token)
+        .maybeSingle();
+
+      if (inviteError) {
+        console.error(inviteError);
+        setState("error");
+        setMessage(
+          "Nem sikerült beolvasni a meghívót. Lehet, hogy lejárt vagy visszavonták."
+        );
+        return;
+      }
+
+      if (!invite) {
+        setState("invalid-link");
+        setMessage(
+          "Ez a meghívó nem létezik vagy lejárt. Kérd meg az útitársadat, hogy küldjön új meghívót."
+        );
+        return;
+      }
+
+      const inviteData = invite as TripInvite;
+
+      if (inviteData.status === "cancelled" || inviteData.status === "expired") {
+        setState("error");
+        setMessage(
+          "Ez a meghívó már nem aktív. Kérd meg az útitársadat, hogy küldjön új meghívót."
+        );
+        return;
+      }
+
+      // 4) E-mail cím ellenőrzése
+      const normalizedInviteEmail = inviteData.invited_email.toLowerCase();
+      const normalizedUserEmail = (user.email ?? "").toLowerCase();
+
+      if (!normalizedUserEmail) {
+        setState("error");
+        setMessage(
+          "Nem sikerült beazonosítani a Google-fiókod e-mail címét. Ellenőrizd a fiók beállításait."
+        );
+        return;
+      }
+
+      if (normalizedInviteEmail !== normalizedUserEmail) {
+        setState("error");
+        setMessage(
+          `Ezt a meghívót a(z) ${inviteData.invited_email} címre küldték, de most a(z) ${user.email} fiókkal vagy bejelentkezve. ` +
+            "Lépj ki, és jelentkezz be a meghívott e-mail címmel."
+        );
+        return;
+      }
+
+      const tripId = inviteData.trip_id;
+
+      // 5) Megnézzük, hogy már tag-e a user
       const { data: existingMembers, error: memberError } = await supabase
         .from("trip_members")
         .select("id, status, role")
@@ -80,36 +144,39 @@ export default function JoinTripPage() {
         return;
       }
 
-      // 4) Ha még nem tag → felvesszük 'member' / 'accepted' státusszal.
+      // 6) Ha még nem tag → felvesszük 'member' / 'accepted' státusszal (vagy az invite szerinti role-lal)
       setState("joining");
       setMessage("Csatlakozás az utazáshoz…");
 
-      const { error: insertError } = await supabase.from("trip_members").insert({
-        trip_id: tripId,
-        user_id: user.id,
-        role: "member",
-        status: "accepted",
-      });
+      const { error: upsertError } = await supabase
+        .from("trip_members")
+        .upsert(
+          {
+            trip_id: tripId,
+            user_id: user.id,
+            role: inviteData.role ?? "member",
+            status: "accepted",
+          },
+          { onConflict: "trip_id,user_id" }
+        );
 
-      if (insertError) {
-        // UNIQUE constraint esetén tekintsük úgy, hogy sikerült (valaki párhuzamosan már felvette).
-        if ((insertError as any).code === "23505") {
-          setState("joined");
-          setMessage(
-            "Már tagja vagy ennek az utazásnak. Átirányítunk az utazás oldalára…"
-          );
-          setTimeout(() => {
-            router.push(`/trip/${tripId}`);
-          }, 1500);
-          return;
-        }
-
-        console.error(insertError);
+      if (upsertError) {
+        console.error(upsertError);
         setState("error");
         setMessage(
           "Nem sikerült csatlakozni ehhez az utazáshoz. Lehet, hogy a meghívó lejárt vagy visszavonták."
         );
         return;
+      }
+
+      // Meghívó státusz frissítése (nem kötelező, de szép)
+      try {
+        await supabase
+          .from("trip_invites")
+          .update({ status: "accepted" })
+          .eq("token", token);
+      } catch (updateErr) {
+        console.error("INVITE STATUS UPDATE ERROR:", updateErr);
       }
 
       setState("joined");
@@ -122,7 +189,7 @@ export default function JoinTripPage() {
     };
 
     run();
-  }, [tripId, router]);
+  }, [token, router]);
 
   const renderContent = () => {
     switch (state) {
