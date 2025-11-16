@@ -49,7 +49,7 @@ export function Header() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: `${window.location.href}`,
         // Itt kérjük az összes szükséges scope-ot
         scopes:
           "openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file",
