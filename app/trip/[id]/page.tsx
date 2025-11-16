@@ -423,14 +423,53 @@ export default function TripDetailPage() {
       setSavingNote(false);
     }
   };
-
   // Trip-hez tartozó Drive mappa biztosítása (TripLog / YYMMDD - Dest)
   const ensureTripFolder = async (accessToken: string): Promise<string> => {
     if (!trip) {
       throw new Error("Nincs utazás betöltve.");
     }
+    if (!user) {
+      throw new Error("Nincs bejelentkezett felhasználó.");
+    }
 
+    const isOwner = user.id === trip.owner_id;
     let folderId = trip.drive_folder_id ?? null;
+
+    // Ha NEM owner a user
+    if (!isOwner) {
+      // Ha még nincs mappa ID, akkor nem hozhat létre sajátot,
+      // mert az utazás mappája mindig az owner Drive-ján éljen.
+      if (!folderId) {
+        throw new Error(
+          "Ehhez az utazáshoz még nincs Drive mappa. " +
+            "Kérd meg az utazás tulajdonosát, hogy töltsön fel először egy fotót vagy dokumentumot."
+        );
+      }
+
+      // Ha van ID, megnézzük, hogy a jelenlegi user eléri-e
+      const checkRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (!checkRes.ok) {
+        const txt = await checkRes.text();
+        console.error("DRIVE FOLDER CHECK (NON-OWNER) ERROR:", txt);
+        throw new Error(
+          "Nincs jogosultságod az utazás Google Drive mappájához. " +
+            "Kérd meg az utazás tulajdonosát, hogy ossza meg veled a mappát."
+        );
+      }
+
+      // Mappa elérhető, használhatjuk
+      return folderId;
+    }
+
+    // INNENTŐL: OWNER LOGIKA
 
     // Ha van eltárolt mappa ID, ellenőrizzük, hogy még létezik-e
     if (folderId) {
@@ -444,19 +483,19 @@ export default function TripDetailPage() {
       );
 
       if (checkRes.status === 404) {
-        console.warn("TRIP FOLDER GONE, RECREATING...");
+        console.warn("TRIP FOLDER GONE, RECREATING AS OWNER...");
         folderId = null;
       } else if (!checkRes.ok) {
         const txt = await checkRes.text();
-        console.error("DRIVE FOLDER CHECK ERROR:", txt);
-        // ha jogosultság hiba van, egyértelműbb üzenetet dobunk
+        console.error("DRIVE FOLDER CHECK (OWNER) ERROR:", txt);
         throw new Error(
-          "Nincs elég jogosultság a Google Drive mappa eléréséhez. Próbáld meg eltávolítani az app hozzáférését a Google fiókodból, majd újra bejelentkezni."
+          "Nem sikerült elérni az utazás Google Drive mappáját. " +
+            "Próbáld meg újra, vagy ellenőrizd a Drive jogosultságokat."
         );
       }
     }
 
-    // Ha nincs (vagy már nem létező) mappa ID, létrehozzuk
+    // Ha nincs (vagy már nem létező) mappa ID, létrehozzuk az OWNER Drive-ján
     if (!folderId) {
       const rootId = await getOrCreateTripLogRootFolder(accessToken);
       const baseUrl = "https://www.googleapis.com/drive/v3/files";
@@ -512,7 +551,7 @@ export default function TripDetailPage() {
         folderId = created.id as string;
       }
 
-      // mappa ID mentése a trips táblába + state frissítés
+      // mappa ID mentése a trips táblába + state frissítés (OWNER-ként)
       const { error } = await supabase
         .from("trips")
         .update({ drive_folder_id: folderId })
