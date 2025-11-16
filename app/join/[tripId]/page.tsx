@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 type JoinTripPageProps = {
   params: {
-    tripId: string;
+    tripId?: string;
   };
 };
 
@@ -16,7 +16,7 @@ type JoinState =
   | "joining"
   | "joined"
   | "error"
-  | "not-found";
+  | "invalid-link";
 
 export default function JoinTripPage({ params }: JoinTripPageProps) {
   const router = useRouter();
@@ -28,6 +28,16 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
       setState("checking");
       setMessage(null);
 
+      // 1) Ha valamiért nincs tripId a URL-ben → ne kérdezzük a DB-t, jelezzük, hogy hibás a link.
+      if (!params.tripId) {
+        setState("invalid-link");
+        setMessage(
+          "Érvénytelen meghívó link. Ellenőrizd, hogy teljes egészében másoltad-e ki."
+        );
+        return;
+      }
+
+      // 2) User ellenőrzése
       const {
         data: { user },
         error: userError,
@@ -48,26 +58,7 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
         return;
       }
 
-      // Ellenőrizzük, létezik-e a trip (és látható-e a usernek).
-      const { data: trip, error: tripError } = await supabase
-        .from("trips")
-        .select("id, title")
-        .eq("id", params.tripId)
-        .maybeSingle();
-
-      if (tripError) {
-        console.error(tripError);
-      }
-
-      if (!trip) {
-        setState("not-found");
-        setMessage(
-          "Ez az utazás nem található, vagy nincs jogosultságod megtekinteni."
-        );
-        return;
-      }
-
-      // Megnézzük, hogy már tag-e a user.
+      // 3) Megnézzük, hogy már tag-e a user (trip_members)
       const { data: existingMembers, error: memberError } = await supabase
         .from("trip_members")
         .select("id, status, role")
@@ -89,7 +80,7 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
         return;
       }
 
-      // Ha még nem tag → felvesszük 'member' / 'accepted' státusszal.
+      // 4) Ha még nem tag → felvesszük 'member' / 'accepted' státusszal.
       setState("joining");
       setMessage("Csatlakozás az utazáshoz…");
 
@@ -140,7 +131,7 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
         return <p>{message ?? "Ellenőrzés…"}</p>;
       case "needs-login":
       case "error":
-      case "not-found":
+      case "invalid-link":
       case "joined":
         return <p>{message}</p>;
       default:
