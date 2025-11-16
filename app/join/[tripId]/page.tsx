@@ -1,14 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-
-type JoinTripPageProps = {
-  params: {
-    tripId?: string;
-  };
-};
 
 type JoinState =
   | "checking"
@@ -18,18 +12,24 @@ type JoinState =
   | "error"
   | "invalid-link";
 
-export default function JoinTripPage({ params }: JoinTripPageProps) {
+export default function JoinTripPage() {
   const router = useRouter();
+  const params = useParams();
   const [state, setState] = useState<JoinState>("checking");
   const [message, setMessage] = useState<string | null>(null);
+
+  // route param kinyerése biztonságosan
+  const rawTripId = params?.tripId;
+  const tripId =
+    typeof rawTripId === "string" ? rawTripId : rawTripId?.[0] ?? undefined;
 
   useEffect(() => {
     const run = async () => {
       setState("checking");
       setMessage(null);
 
-      // 1) Ha valamiért nincs tripId a URL-ben → ne kérdezzük a DB-t, jelezzük, hogy hibás a link.
-      if (!params.tripId) {
+      // 1) Ha valamiért nincs tripId a URL-ben → hibás link
+      if (!tripId) {
         setState("invalid-link");
         setMessage(
           "Érvénytelen meghívó link. Ellenőrizd, hogy teljes egészében másoltad-e ki."
@@ -62,7 +62,7 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
       const { data: existingMembers, error: memberError } = await supabase
         .from("trip_members")
         .select("id, status, role")
-        .eq("trip_id", params.tripId)
+        .eq("trip_id", tripId)
         .eq("user_id", user.id);
 
       if (memberError) {
@@ -75,7 +75,7 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
           "Már tagja vagy ennek az utazásnak. Átirányítunk az utazás oldalára…"
         );
         setTimeout(() => {
-          router.push(`/trip/${params.tripId}`);
+          router.push(`/trip/${tripId}`);
         }, 1500);
         return;
       }
@@ -85,7 +85,7 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
       setMessage("Csatlakozás az utazáshoz…");
 
       const { error: insertError } = await supabase.from("trip_members").insert({
-        trip_id: params.tripId,
+        trip_id: tripId,
         user_id: user.id,
         role: "member",
         status: "accepted",
@@ -99,7 +99,7 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
             "Már tagja vagy ennek az utazásnak. Átirányítunk az utazás oldalára…"
           );
           setTimeout(() => {
-            router.push(`/trip/${params.tripId}`);
+            router.push(`/trip/${tripId}`);
           }, 1500);
           return;
         }
@@ -117,12 +117,12 @@ export default function JoinTripPage({ params }: JoinTripPageProps) {
         "Sikeresen csatlakoztál az utazáshoz! Átirányítunk az utazás oldalára…"
       );
       setTimeout(() => {
-        router.push(`/trip/${params.tripId}`);
+        router.push(`/trip/${tripId}`);
       }, 1500);
     };
 
     run();
-  }, [params.tripId, router]);
+  }, [tripId, router]);
 
   const renderContent = () => {
     switch (state) {

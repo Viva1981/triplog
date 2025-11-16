@@ -1,26 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-type InvitePageProps = {
-  params: {
-    id: string; // trip id
-  };
-};
-
-export default function TripInvitePage({ params }: InvitePageProps) {
+export default function TripInvitePage() {
   const router = useRouter();
+  const params = useParams();
   const [loading, setLoading] = useState(true);
   const [inviteUrl, setInviteUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [tripTitle, setTripTitle] = useState<string | null>(null);
 
+  const rawId = params?.id;
+  const tripId = typeof rawId === "string" ? rawId : rawId?.[0] ?? undefined;
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       setError(null);
+
+      if (!tripId) {
+        setError(
+          "Érvénytelen utazás azonosító. Ellenőrizd, hogy helyes linket nyitottál-e meg."
+        );
+        setLoading(false);
+        return;
+      }
 
       const {
         data: { user },
@@ -46,7 +52,7 @@ export default function TripInvitePage({ params }: InvitePageProps) {
       const { data: trip, error: tripError } = await supabase
         .from("trips")
         .select("id, title")
-        .eq("id", params.id)
+        .eq("id", tripId)
         .maybeSingle();
 
       if (tripError || !trip) {
@@ -70,7 +76,7 @@ export default function TripInvitePage({ params }: InvitePageProps) {
     };
 
     init();
-  }, [params.id]);
+  }, [tripId]);
 
   const handleCopy = async () => {
     if (!inviteUrl) return;
@@ -84,7 +90,8 @@ export default function TripInvitePage({ params }: InvitePageProps) {
   };
 
   const handleBackToTrip = () => {
-    router.push(`/trip/${params.id}`);
+    if (!tripId) return;
+    router.push(`/trip/${tripId}`);
   };
 
   return (
