@@ -145,6 +145,15 @@ export default function TripDetailPage() {
   const router = useRouter();
   const params = useParams();
 
+  // Dinamikus route param biztonságos kinyerése
+  const rawTripId = params?.id;
+  const tripId =
+    typeof rawTripId === "string"
+      ? rawTripId
+      : Array.isArray(rawTripId)
+      ? rawTripId[0]
+      : undefined;
+
   const [user, setUser] = useState<User | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
@@ -214,11 +223,10 @@ export default function TripDetailPage() {
     fetchUser();
   }, [router]);
 
-  // Trip betöltése
+  // Trip betöltése – single() nélkül, hogy ne dobjon 406-ot
   useEffect(() => {
     const fetchTrip = async () => {
-      const tripId = params?.id;
-      if (!tripId || Array.isArray(tripId)) {
+      if (!tripId) {
         setError("Érvénytelen utazás azonosító.");
         setLoadingTrip(false);
         return;
@@ -232,18 +240,22 @@ export default function TripDetailPage() {
         .select(
           "id, owner_id, title, destination, date_from, date_to, notes, drive_folder_id"
         )
-        .eq("id", tripId)
-        .single();
+        .eq("id", tripId);
 
-      if (error || !data) {
+      if (error) {
         console.error("TRIP FETCH ERROR:", error);
         setError(
-          error?.message ??
+          error.message ??
             "Nem található ez az utazás, vagy nincs jogosultságod a megtekintéséhez."
         );
         setTrip(null);
+      } else if (!data || data.length === 0) {
+        setError(
+          "Nem található ez az utazás, vagy nincs jogosultságod a megtekintéséhez."
+        );
+        setTrip(null);
       } else {
-        const tripData = data as Trip;
+        const tripData = data[0] as Trip;
         setTrip(tripData);
         setNoteInput(tripData.notes ?? "");
       }
@@ -254,13 +266,12 @@ export default function TripDetailPage() {
     if (!loadingUser) {
       fetchTrip();
     }
-  }, [params, loadingUser]);
+  }, [tripId, loadingUser]);
 
   // Költségek betöltése
   useEffect(() => {
     const fetchExpenses = async () => {
-      const tripId = params?.id;
-      if (!tripId || Array.isArray(tripId) || !user) {
+      if (!tripId || !user) {
         setExpenses([]);
         return;
       }
@@ -289,13 +300,12 @@ export default function TripDetailPage() {
     if (user && trip) {
       fetchExpenses();
     }
-  }, [params, user, trip]);
+  }, [tripId, user, trip]);
 
   // Fájlok betöltése
   useEffect(() => {
     const fetchFiles = async () => {
-      const tripId = params?.id;
-      if (!tripId || Array.isArray(tripId) || !user) {
+      if (!tripId || !user) {
         setPhotoFiles([]);
         setDocFiles([]);
         return;
@@ -314,9 +324,7 @@ export default function TripDetailPage() {
 
       if (error) {
         console.error("FILES FETCH ERROR:", error);
-        setFilesError(
-          error.message ?? "Nem sikerült betölteni a fájlokat."
-        );
+        setFilesError(error.message ?? "Nem sikerült betölteni a fájlokat.");
       } else {
         const all = (data ?? []) as TripFile[];
         setPhotoFiles(all.filter((f) => f.type === "photo"));
@@ -329,7 +337,7 @@ export default function TripDetailPage() {
     if (user && trip) {
       fetchFiles();
     }
-  }, [params, user, trip]);
+  }, [tripId, user, trip]);
 
   const handleExpenseSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -346,7 +354,6 @@ export default function TripDetailPage() {
     }
 
     try {
-      const tripId = trip.id;
       const parsedAmount = parseFloat(expenseAmount.replace(",", "."));
       if (isNaN(parsedAmount)) {
         setExpensesError("Érvénytelen összeg.");
@@ -357,7 +364,7 @@ export default function TripDetailPage() {
       const { data, error } = await supabase
         .from("trip_expenses")
         .insert({
-          trip_id: tripId,
+          trip_id: trip.id,
           user_id: user.id,
           date: expenseDate || new Date().toISOString().slice(0, 10),
           category: expenseCategory.trim() || null,
@@ -405,9 +412,7 @@ export default function TripDetailPage() {
 
       if (error) {
         console.error("NOTE UPDATE ERROR:", error);
-        setNoteError(
-          error?.message ?? "Nem sikerült elmenteni a jegyzetet."
-        );
+        setNoteError(error?.message ?? "Nem sikerült elmenteni a jegyzetet.");
       } else {
         setNoteSuccess("Jegyzet elmentve.");
       }
@@ -420,110 +425,110 @@ export default function TripDetailPage() {
   };
 
   // Trip-hez tartozó Drive mappa biztosítása (TripLog / YYMMDD - Dest)
-const ensureTripFolder = async (accessToken: string): Promise<string> => {
-  if (!trip) {
-    throw new Error("Nincs utazás betöltve.");
-  }
+  const ensureTripFolder = async (accessToken: string): Promise<string> => {
+    if (!trip) {
+      throw new Error("Nincs utazás betöltve.");
+    }
 
-  let folderId = trip.drive_folder_id ?? null;
+    let folderId = trip.drive_folder_id ?? null;
 
-  // Ha van eltárolt mappa ID, ellenőrizzük, hogy még létezik-e
-  if (folderId) {
-    const checkRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+    // Ha van eltárolt mappa ID, ellenőrizzük, hogy még létezik-e
+    if (folderId) {
+      const checkRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (checkRes.status === 404) {
+        console.warn("TRIP FOLDER GONE, RECREATING...");
+        folderId = null;
+      } else if (!checkRes.ok) {
+        const txt = await checkRes.text();
+        console.error("DRIVE FOLDER CHECK ERROR:", txt);
+        // ha jogosultság hiba van, egyértelműbb üzenetet dobunk
+        throw new Error(
+          "Nincs elég jogosultság a Google Drive mappa eléréséhez. Próbáld meg eltávolítani az app hozzáférését a Google fiókodból, majd újra bejelentkezni."
+        );
       }
-    );
+    }
 
-    if (checkRes.status === 404) {
-      console.warn("TRIP FOLDER GONE, RECREATING...");
-      folderId = null;
-    } else if (!checkRes.ok) {
-      const txt = await checkRes.text();
-      console.error("DRIVE FOLDER CHECK ERROR:", txt);
-      // ha jogosultság hiba van, egyértelműbb üzenetet dobunk
-      throw new Error(
-        "Nincs elég jogosultság a Google Drive mappa eléréséhez. Próbáld meg eltávolítani az app hozzáférését a Google fiókodból, majd újra bejelentkezni."
+    // Ha nincs (vagy már nem létező) mappa ID, létrehozzuk
+    if (!folderId) {
+      const rootId = await getOrCreateTripLogRootFolder(accessToken);
+      const baseUrl = "https://www.googleapis.com/drive/v3/files";
+      const folderName = buildTripFolderName(trip);
+
+      // megpróbáljuk megkeresni a TripLog mappán belül
+      const query = encodeURIComponent(
+        `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and '${rootId}' in parents and trashed=false`
+      );
+
+      const searchRes = await fetch(
+        `${baseUrl}?q=${query}&fields=files(id,name)`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      const searchData = await searchRes.json();
+      if (searchData.files && searchData.files.length > 0) {
+        folderId = searchData.files[0].id as string;
+      } else {
+        // ha nincs, létrehozzuk
+        const createRes = await fetch(baseUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: folderName,
+            mimeType: "application/vnd.google-apps.folder",
+            parents: [rootId],
+          }),
+        });
+
+        if (!createRes.ok) {
+          const txt = await createRes.text();
+          console.error("TRIP FOLDER CREATE ERROR:", txt);
+          throw new Error(
+            "Nem sikerült létrehozni az utazás mappáját a Drive-on."
+          );
+        }
+
+        const created = await createRes.json();
+        if (!created.id) {
+          throw new Error(
+            "Nem sikerült létrehozni az utazás mappáját a Drive-on."
+          );
+        }
+
+        folderId = created.id as string;
+      }
+
+      // mappa ID mentése a trips táblába + state frissítés
+      const { error } = await supabase
+        .from("trips")
+        .update({ drive_folder_id: folderId })
+        .eq("id", trip.id);
+
+      if (error) {
+        console.error("TRIP FOLDER UPDATE ERROR:", error);
+      }
+
+      setTrip((prev) =>
+        prev ? { ...prev, drive_folder_id: folderId } : prev
       );
     }
-  }
 
-  // Ha nincs (vagy már nem létező) mappa ID, létrehozzuk
-  if (!folderId) {
-    const rootId = await getOrCreateTripLogRootFolder(accessToken);
-    const baseUrl = "https://www.googleapis.com/drive/v3/files";
-    const folderName = buildTripFolderName(trip);
-
-    // megpróbáljuk megkeresni a TripLog mappán belül
-    const query = encodeURIComponent(
-      `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and '${rootId}' in parents and trashed=false`
-    );
-
-    const searchRes = await fetch(
-      `${baseUrl}?q=${query}&fields=files(id,name)`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
-
-    const searchData = await searchRes.json();
-    if (searchData.files && searchData.files.length > 0) {
-      folderId = searchData.files[0].id as string;
-    } else {
-      // ha nincs, létrehozzuk
-      const createRes = await fetch(baseUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: folderName,
-          mimeType: "application/vnd.google-apps.folder",
-          parents: [rootId],
-        }),
-      });
-
-      if (!createRes.ok) {
-        const txt = await createRes.text();
-        console.error("TRIP FOLDER CREATE ERROR:", txt);
-        throw new Error(
-          "Nem sikerült létrehozni az utazás mappáját a Drive-on."
-        );
-      }
-
-      const created = await createRes.json();
-      if (!created.id) {
-        throw new Error(
-          "Nem sikerült létrehozni az utazás mappáját a Drive-on."
-        );
-      }
-
-      folderId = created.id as string;
-    }
-
-    // mappa ID mentése a trips táblába + state frissítés
-    const { error } = await supabase
-      .from("trips")
-      .update({ drive_folder_id: folderId })
-      .eq("id", trip.id);
-
-    if (error) {
-      console.error("TRIP FOLDER UPDATE ERROR:", error);
-    }
-
-    setTrip((prev) =>
-      prev ? { ...prev, drive_folder_id: folderId } : prev
-    );
-  }
-
-  return folderId;
-};
+    return folderId;
+  };
 
   // Feltöltés Drive-ra + trip_files mentés
   const uploadFileToDriveAndSave = async (
@@ -719,9 +724,7 @@ const ensureTripFolder = async (accessToken: string): Promise<string> => {
       if (error || !data) {
         console.error("FILE INSERT ERROR:", error);
         if (type === "photo") {
-          setPhotoError(
-            error?.message ?? "Nem sikerült elmenteni a fotót."
-          );
+          setPhotoError(error?.message ?? "Nem sikerült elmenteni a fotót.");
         } else {
           setDocError(
             error?.message ?? "Nem sikerült elmenteni a dokumentumot."
@@ -766,9 +769,7 @@ const ensureTripFolder = async (accessToken: string): Promise<string> => {
       if (error) {
         console.error("FILE DELETE ERROR:", error);
         if (type === "photo") {
-          setPhotoError(
-            error?.message ?? "Nem sikerült törölni a fotót."
-          );
+          setPhotoError(error?.message ?? "Nem sikerült törölni a fotót.");
         } else {
           setDocError(
             error?.message ?? "Nem sikerült törölni a dokumentumot."
