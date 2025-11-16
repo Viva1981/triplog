@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import supabase from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 
 type InvitePageProps = {
   params: {
@@ -111,8 +111,9 @@ export default function TripInvitePage({ params }: InvitePageProps) {
             )}
 
             <p className="text-sm text-slate-700">
-              Ezt a linket küldd el az útitársaidnak. Ha megnyitják, Google-lel
-              bejelentkeznek, és automatikusan tagok lesznek ebben az utazásban.
+              Ezt a linket küldd el az útitársaidnak. Ha megnyitják,
+              Google-lel bejelentkeznek, és automatikusan tagok lesznek ebben
+              az utazásban.
             </p>
 
             <div className="flex flex-col gap-3">
