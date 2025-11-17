@@ -54,24 +54,6 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-// Google Drive megosztási linkből file ID kiszedése
-function extractDriveFileId(url: string): string | null {
-  try {
-    const u = new URL(url);
-    const idParam = u.searchParams.get("id");
-    if (idParam) return idParam;
-
-    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-    if (match && match[1]) return match[1];
-
-    return null;
-  } catch {
-    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-    if (match && match[1]) return match[1];
-    return null;
-  }
-}
-
 // Trip mappa neve: 251115 - Miskolc Magyarország
 function buildTripFolderName(trip: Trip): string {
   let prefix = "000000";
@@ -92,7 +74,6 @@ async function getOrCreateTripLogRootFolder(
 ): Promise<string> {
   const baseUrl = "https://www.googleapis.com/drive/v3/files";
 
-  // keresés: TripLog mappa a rootban
   const query = encodeURIComponent(
     "mimeType='application/vnd.google-apps.folder' and name='TripLog' and 'root' in parents and trashed=false"
   );
@@ -108,7 +89,6 @@ async function getOrCreateTripLogRootFolder(
     return searchData.files[0].id as string;
   }
 
-  // ha nincs, létrehozás
   const createRes = await fetch(baseUrl, {
     method: "POST",
     headers: {
@@ -141,77 +121,9 @@ function getBaseName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "");
 }
 
-// Eseménynapló fájl létrehozása a trip mappában (owner Drive-ján)
-async function createTripLogFile(
-  accessToken: string,
-  folderId: string,
-  trip: Trip
-): Promise<void> {
-  const nowIso = new Date().toISOString();
-  const lines = [
-    "TripLog event log",
-    "",
-    `[${nowIso}] Trip created: ${trip.title}`,
-    `[${nowIso}] Event log file created.`,
-    "",
-  ];
-  const fileContent = lines.join("\n");
-
-  const boundary = "-------314159265358979323846";
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
-
-  const metadata = {
-    name: "triplog-log.txt",
-    mimeType: "text/plain",
-    parents: [folderId],
-  };
-
-  // Csak ASCII, ezért jó a sima btoa
-  const base64Data = btoa(fileContent);
-
-  const multipartRequestBody =
-    delimiter +
-    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-    JSON.stringify(metadata) +
-    delimiter +
-    "Content-Type: text/plain; charset=UTF-8\r\n" +
-    "Content-Transfer-Encoding: base64\r\n" +
-    "\r\n" +
-    base64Data +
-    closeDelimiter;
-
-  const res = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": `multipart/related; boundary=${boundary}`,
-      },
-      body: multipartRequestBody,
-    }
-  );
-
-  if (!res.ok) {
-    const txt = await res.text();
-    console.error("TRIP LOG CREATE ERROR:", txt);
-    // Nem dobjuk tovább, ne törje el az appot
-  }
-}
-
 export default function TripDetailPage() {
   const router = useRouter();
   const params = useParams();
-
-  // Dinamikus route param biztonságos kinyerése
-  const rawTripId = params?.id;
-  const tripId =
-    typeof rawTripId === "string"
-      ? rawTripId
-      : Array.isArray(rawTripId)
-      ? rawTripId[0]
-      : undefined;
 
   const [user, setUser] = useState<User | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
@@ -247,16 +159,11 @@ export default function TripDetailPage() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState<string | null>(null);
 
-  // Új fotó űrlap (linkes)
-  const [photoName, setPhotoName] = useState("");
-  const [photoLink, setPhotoLink] = useState("");
+  // Fotó / dokumentum feltöltés állapot
   const [submittingPhoto, setSubmittingPhoto] = useState(false);
   const [photoSuccess, setPhotoSuccess] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
-  // Új dokumentum űrlap (linkes)
-  const [docName, setDocName] = useState("");
-  const [docLink, setDocLink] = useState("");
   const [submittingDoc, setSubmittingDoc] = useState(false);
   const [docSuccess, setDocSuccess] = useState<string | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
@@ -271,7 +178,7 @@ export default function TripDetailPage() {
       if (!user) {
         setUser(null);
         setLoadingUser(false);
-        router.push("/"); // nincs login → vissza a főoldalra
+        router.push("/");
         return;
       }
 
@@ -282,10 +189,11 @@ export default function TripDetailPage() {
     fetchUser();
   }, [router]);
 
-  // Trip betöltése – single() nélkül, hogy ne dobjon 406-ot
+  // Trip betöltése
   useEffect(() => {
     const fetchTrip = async () => {
-      if (!tripId) {
+      const tripId = params?.id;
+      if (!tripId || Array.isArray(tripId)) {
         setError("Érvénytelen utazás azonosító.");
         setLoadingTrip(false);
         return;
@@ -299,22 +207,18 @@ export default function TripDetailPage() {
         .select(
           "id, owner_id, title, destination, date_from, date_to, notes, drive_folder_id"
         )
-        .eq("id", tripId);
+        .eq("id", tripId)
+        .single();
 
-      if (error) {
+      if (error || !data) {
         console.error("TRIP FETCH ERROR:", error);
         setError(
-          error.message ??
+          error?.message ??
             "Nem található ez az utazás, vagy nincs jogosultságod a megtekintéséhez."
         );
         setTrip(null);
-      } else if (!data || data.length === 0) {
-        setError(
-          "Nem található ez az utazás, vagy nincs jogosultságod a megtekintéséhez."
-        );
-        setTrip(null);
       } else {
-        const tripData = data[0] as Trip;
+        const tripData = data as Trip;
         setTrip(tripData);
         setNoteInput(tripData.notes ?? "");
       }
@@ -325,12 +229,13 @@ export default function TripDetailPage() {
     if (!loadingUser) {
       fetchTrip();
     }
-  }, [tripId, loadingUser]);
+  }, [params, loadingUser]);
 
   // Költségek betöltése
   useEffect(() => {
     const fetchExpenses = async () => {
-      if (!tripId || !user) {
+      const tripId = params?.id;
+      if (!tripId || Array.isArray(tripId) || !user) {
         setExpenses([]);
         return;
       }
@@ -359,12 +264,13 @@ export default function TripDetailPage() {
     if (user && trip) {
       fetchExpenses();
     }
-  }, [tripId, user, trip]);
+  }, [params, user, trip]);
 
   // Fájlok betöltése
   useEffect(() => {
     const fetchFiles = async () => {
-      if (!tripId || !user) {
+      const tripId = params?.id;
+      if (!tripId || Array.isArray(tripId) || !user) {
         setPhotoFiles([]);
         setDocFiles([]);
         return;
@@ -383,7 +289,9 @@ export default function TripDetailPage() {
 
       if (error) {
         console.error("FILES FETCH ERROR:", error);
-        setFilesError(error.message ?? "Nem sikerült betölteni a fájlokat.");
+        setFilesError(
+          error.message ?? "Nem sikerült betölteni a fájlokat."
+        );
       } else {
         const all = (data ?? []) as TripFile[];
         setPhotoFiles(all.filter((f) => f.type === "photo"));
@@ -396,57 +304,104 @@ export default function TripDetailPage() {
     if (user && trip) {
       fetchFiles();
     }
-  }, [tripId, user, trip]);
+  }, [params, user, trip]);
 
-  // Trip-hez tartozó Drive mappa biztosítása (TripLog / YYMMDD - Dest)
+  const handleExpenseSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user || !trip) return;
+
+    setSubmittingExpense(true);
+    setExpensesError(null);
+    setExpenseSuccess(null);
+
+    if (!expenseAmount) {
+      setExpensesError("Az összeg megadása kötelező.");
+      setSubmittingExpense(false);
+      return;
+    }
+
+    try {
+      const tripId = trip.id;
+      const parsedAmount = parseFloat(expenseAmount.replace(",", "."));
+      if (isNaN(parsedAmount)) {
+        setExpensesError("Érvénytelen összeg.");
+        setSubmittingExpense(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("trip_expenses")
+        .insert({
+          trip_id: tripId,
+          user_id: user.id,
+          date: expenseDate || new Date().toISOString().slice(0, 10),
+          category: expenseCategory.trim() || null,
+          note: expenseNote.trim() || null,
+          amount: parsedAmount,
+          currency: expenseCurrency || "EUR",
+          payment_method: expensePaymentMethod.trim() || null,
+        })
+        .select("id, date, category, note, amount, currency, payment_method")
+        .single();
+
+      if (error || !data) {
+        console.error("EXPENSE INSERT ERROR:", error);
+        setExpensesError(
+          error?.message ?? "Nem sikerült elmenteni a költséget."
+        );
+      } else {
+        setExpenses((prev) => [...prev, data as Expense]);
+        setExpenseSuccess("Költség sikeresen rögzítve.");
+        setExpenseDate("");
+        setExpenseCategory("");
+        setExpenseNote("");
+        setExpenseAmount("");
+        setExpensePaymentMethod("");
+      }
+    } catch (err: any) {
+      console.error("EXPENSE SUBMIT ERROR:", err);
+      setExpensesError(err?.message ?? "Ismeretlen hiba történt.");
+    } finally {
+      setSubmittingExpense(false);
+    }
+  };
+
+  const handleNoteSave = async () => {
+    if (!trip) return;
+    setSavingNote(true);
+    setNoteError(null);
+    setNoteSuccess(null);
+
+    try {
+      const { error } = await supabase
+        .from("trips")
+        .update({ notes: noteInput })
+        .eq("id", trip.id);
+
+      if (error) {
+        console.error("NOTE UPDATE ERROR:", error);
+        setNoteError(
+          error?.message ?? "Nem sikerült elmenteni a jegyzetet."
+        );
+      } else {
+        setNoteSuccess("Jegyzet elmentve.");
+      }
+    } catch (err: any) {
+      console.error("NOTE SAVE ERROR:", err);
+      setNoteError(err?.message ?? "Ismeretlen hiba történt.");
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // Trip-hez tartozó Drive mappa biztosítása
   const ensureTripFolder = async (accessToken: string): Promise<string> => {
     if (!trip) {
       throw new Error("Nincs utazás betöltve.");
     }
-    if (!user) {
-      throw new Error("Nincs bejelentkezett felhasználó.");
-    }
 
-    const isOwner = user.id === trip.owner_id;
     let folderId = trip.drive_folder_id ?? null;
 
-    // Ha NEM owner a user
-    if (!isOwner) {
-      // Ha még nincs mappa ID, akkor nem hozhat létre sajátot,
-      // mert az utazás mappája mindig az owner Drive-ján éljen.
-      if (!folderId) {
-        throw new Error(
-          "Ehhez az utazáshoz még nincs Drive mappa. " +
-            "Kérd meg az utazás tulajdonosát, hogy töltsön fel először egy fotót vagy dokumentumot."
-        );
-      }
-
-      // Ha van ID, megnézzük, hogy a jelenlegi user eléri-e
-      const checkRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!checkRes.ok) {
-        const txt = await checkRes.text();
-        console.error("DRIVE FOLDER CHECK (NON-OWNER) ERROR:", txt);
-        throw new Error(
-          "Nincs jogosultságod az utazás Google Drive mappájához. " +
-            "Kérd meg az utazás tulajdonosát, hogy ossza meg veled a mappát."
-        );
-      }
-
-      // Mappa elérhető, használhatjuk
-      return folderId;
-    }
-
-    // INNENTŐL: OWNER LOGIKA
-
-    // Ha van eltárolt mappa ID, ellenőrizzük, hogy még létezik-e
     if (folderId) {
       const checkRes = await fetch(
         `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id`,
@@ -458,25 +413,22 @@ export default function TripDetailPage() {
       );
 
       if (checkRes.status === 404) {
-        console.warn("TRIP FOLDER GONE, RECREATING AS OWNER...");
+        console.warn("TRIP FOLDER GONE, RECREATING...");
         folderId = null;
       } else if (!checkRes.ok) {
         const txt = await checkRes.text();
-        console.error("DRIVE FOLDER CHECK (OWNER) ERROR:", txt);
+        console.error("DRIVE FOLDER CHECK ERROR:", txt);
         throw new Error(
-          "Nem sikerült elérni az utazás Google Drive mappáját. " +
-            "Próbáld meg újra, vagy ellenőrizd a Drive jogosultságokat."
+          "Nincs elég jogosultság a Google Drive mappa eléréséhez. Próbáld meg eltávolítani az app hozzáférését a Google fiókodból, majd újra bejelentkezni."
         );
       }
     }
 
-    // Ha nincs (vagy már nem létező) mappa ID, létrehozzuk az OWNER Drive-ján
     if (!folderId) {
       const rootId = await getOrCreateTripLogRootFolder(accessToken);
       const baseUrl = "https://www.googleapis.com/drive/v3/files";
       const folderName = buildTripFolderName(trip);
 
-      // megpróbáljuk megkeresni a TripLog mappán belül
       const query = encodeURIComponent(
         `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and '${rootId}' in parents and trashed=false`
       );
@@ -494,7 +446,6 @@ export default function TripDetailPage() {
       if (searchData.files && searchData.files.length > 0) {
         folderId = searchData.files[0].id as string;
       } else {
-        // ha nincs, létrehozzuk
         const createRes = await fetch(baseUrl, {
           method: "POST",
           headers: {
@@ -526,7 +477,6 @@ export default function TripDetailPage() {
         folderId = created.id as string;
       }
 
-      // mappa ID mentése a trips táblába + state frissítés (OWNER-ként)
       const { error } = await supabase
         .from("trips")
         .update({ drive_folder_id: folderId })
@@ -543,43 +493,6 @@ export default function TripDetailPage() {
 
     return folderId;
   };
-
-  // Owner nézetben: Drive mappa + eseménynapló biztosítása a trip megnyitásakor
-  useEffect(() => {
-    const ensureOwnerFolderAndLog = async () => {
-      if (!trip || !user) return;
-      if (user.id !== trip.owner_id) return; // csak az owner Drive-ján dolgozunk
-
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        const accessToken = session?.provider_token as string | undefined;
-        if (!accessToken) {
-          console.warn(
-            "Nincs Google hozzáférési token az utazás megnyitásakor – Drive mappa később, feltöltéskor is létrejön."
-          );
-          return;
-        }
-
-        const hadFolderBefore = !!trip.drive_folder_id;
-        const folderId = await ensureTripFolder(accessToken);
-
-        if (!hadFolderBefore && folderId) {
-          try {
-            await createTripLogFile(accessToken, folderId, trip);
-          } catch (err) {
-            console.error("TRIP LOG CREATE (owner view) ERROR:", err);
-          }
-        }
-      } catch (err) {
-        console.error("OWNER FOLDER ENSURE ERROR:", err);
-      }
-    };
-
-    ensureOwnerFolderAndLog();
-  }, [trip, user]);
 
   // Feltöltés Drive-ra + trip_files mentés
   const uploadFileToDriveAndSave = async (
@@ -610,10 +523,8 @@ export default function TripDetailPage() {
         );
       }
 
-      // Trip mappa biztosítása
       const folderId = await ensureTripFolder(accessToken);
 
-      // multipart feltöltés
       const boundary = "-------314159265358979323846";
       const delimiter = `\r\n--${boundary}\r\n`;
       const closeDelimiter = `\r\n--${boundary}--`;
@@ -715,144 +626,64 @@ export default function TripDetailPage() {
     }
   };
 
-  // Linkes fájl hozzáadása (a régi logika)
-  const handleAddFile = async (type: "photo" | "document") => {
-    if (!user || !trip) return;
+  const handleDeleteFile = async (
+    fileId: string,
+    type: "photo" | "document",
+    driveFileId?: string
+  ) => {
+    if (!user) return;
+
+    const file =
+      type === "photo"
+        ? photoFiles.find((f) => f.id === fileId)
+        : docFiles.find((f) => f.id === fileId);
+
+    if (!file) return;
+
+    const confirmed = confirm("Biztosan törlöd ezt a fájlt?");
+    if (!confirmed) return;
 
     if (type === "photo") {
       setPhotoError(null);
-      setPhotoSuccess(null);
-      if (!photoName.trim() || !photoLink.trim()) {
-        setPhotoError("Név és Drive link megadása kötelező.");
-        return;
-      }
     } else {
       setDocError(null);
-      setDocSuccess(null);
-      if (!docName.trim() || !docLink.trim()) {
-        setDocError("Név és Drive link megadása kötelező.");
-        return;
-      }
     }
-
-    const rawLink = type === "photo" ? photoLink.trim() : docLink.trim();
-    const name = type === "photo" ? photoName.trim() : docName.trim();
-
-    const fileId = extractDriveFileId(rawLink);
-    if (!fileId) {
-      if (type === "photo") {
-        setPhotoError("Nem sikerült értelmezni a Drive linket.");
-      } else {
-        setDocError("Nem sikerült értelmezni a Drive linket.");
-      }
-      return;
-    }
-
-    const thumbnail = `https://drive.google.com/thumbnail?&id=${fileId}`;
-    const preview = `https://drive.google.com/file/d/${fileId}/view`;
-
-    if (type === "photo") setSubmittingPhoto(true);
-    else setSubmittingDoc(true);
 
     try {
-      const { data, error } = await supabase
-        .from("trip_files")
-        .insert({
-          trip_id: trip.id,
-          user_id: user.id,
-          type,
-          drive_file_id: fileId,
-          name,
-          mime_type: null,
-          thumbnail_link: thumbnail,
-          preview_link: preview,
-        })
-        .select(
-          "id, type, name, drive_file_id, thumbnail_link, preview_link"
-        )
-        .single();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      if (error || !data) {
-        console.error("FILE INSERT ERROR:", error);
-        if (type === "photo") {
-          setPhotoError(error?.message ?? "Nem sikerült elmenteni a fotót.");
-        } else {
-          setDocError(
-            error?.message ?? "Nem sikerült elmenteni a dokumentumot."
-          );
-        }
-      } else {
-        const newFile = data as TripFile;
-        if (type === "photo") {
-          setPhotoFiles((prev) => [...prev, newFile]);
-          setPhotoSuccess("Fotó sikeresen hozzáadva.");
-          setPhotoName("");
-          setPhotoLink("");
-        } else {
-          setDocFiles((prev) => [...prev, newFile]);
-          setDocSuccess("Dokumentum sikeresen hozzáadva.");
-          setDocName("");
-          setDocLink("");
-        }
-      }
-    } catch (err: any) {
-      console.error("FILE ADD ERROR:", err);
-      if (type === "photo") {
-        setPhotoError(err?.message ?? "Ismeretlen hiba történt.");
-      } else {
-        setDocError(err?.message ?? "Ismeretlen hiba történt.");
-      }
-    } finally {
-      if (type === "photo") setSubmittingPhoto(false);
-      else setSubmittingDoc(false);
-    }
-  };
+      const accessToken = session?.provider_token as string | undefined;
 
-const handleDeleteFile = async (
-  fileId: string,
-  type: "photo" | "document",
-  driveFileId?: string // <- ezt hozzáadtuk, hogy a 3. paraméter is elfogadott legyen
-) => {
-  if (!user) return;
+      if (accessToken) {
+        const driveRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
 
-  const file =
-    type === "photo"
-      ? photoFiles.find((f) => f.id === fileId)
-      : docFiles.find((f) => f.id === fileId);
+        if (!driveRes.ok && driveRes.status !== 404) {
+          if (driveRes.status === 403 || driveRes.status === 401) {
+            const msg =
+              "Ezt a fájlt valószínűleg egy másik utazó hozta létre. Csak ő vagy a Google Drive felületén tudja törölni.";
+            if (type === "photo") {
+              setPhotoError(msg);
+            } else {
+              setDocError(msg);
+            }
+            return;
+          }
 
-  if (!file) return;
+          const txt = await driveRes.text().catch(() => "");
+          console.error("DRIVE DELETE ERROR:", driveRes.status, txt);
 
-  const confirmed = confirm("Biztosan törlöd ezt a fájlt?");
-  if (!confirmed) return;
-
-  if (type === "photo") {
-    setPhotoError(null);
-  } else {
-    setDocError(null);
-  }
-
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    const accessToken = session?.provider_token as string | undefined;
-
-    if (accessToken) {
-      const driveRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!driveRes.ok && driveRes.status !== 404) {
-        if (driveRes.status === 403 || driveRes.status === 401) {
           const msg =
-            "Ezt a fájlt valószínűleg egy másik utazó hozta létre. Csak ő vagy a Google Drive felületén tudja törölni.";
+            "Nem sikerült törölni a fájlt a Google Drive-ról. Próbáld meg később, vagy töröld közvetlenül a Drive felületén.";
           if (type === "photo") {
             setPhotoError(msg);
           } else {
@@ -860,54 +691,41 @@ const handleDeleteFile = async (
           }
           return;
         }
+      }
 
-        const txt = await driveRes.text().catch(() => "");
-        console.error("DRIVE DELETE ERROR:", driveRes.status, txt);
+      const { error } = await supabase
+        .from("trip_files")
+        .delete()
+        .eq("id", fileId);
 
-        const msg =
-          "Nem sikerült törölni a fájlt a Google Drive-ról. Próbáld meg később, vagy töröld közvetlenül a Drive felületén.";
+      if (error) {
+        console.error("FILE DELETE ERROR:", error);
+        const msg = "Nem sikerült törölni a fájlt az alkalmazásból.";
         if (type === "photo") {
-          setPhotoError(msg);
+          setPhotoError(error.message ?? msg);
         } else {
-          setDocError(msg);
+          setDocError(error.message ?? msg);
         }
         return;
       }
-    }
 
-    const { error } = await supabase
-      .from("trip_files")
-      .delete()
-      .eq("id", fileId);
-
-    if (error) {
-      console.error("FILE DELETE ERROR:", error);
-      const msg = "Nem sikerült törölni a fájlt az alkalmazásból.";
       if (type === "photo") {
-        setPhotoError(error.message ?? msg);
+        setPhotoFiles((prev) => prev.filter((f) => f.id !== fileId));
       } else {
-        setDocError(error.message ?? msg);
+        setDocFiles((prev) => prev.filter((f) => f.id !== fileId));
       }
-      return;
+    } catch (err: any) {
+      console.error("FILE DELETE UNEXPECTED ERROR:", err);
+      const msg =
+        err?.message ??
+        "Ismeretlen hiba történt törlés közben. Próbáld újra később.";
+      if (type === "photo") {
+        setPhotoError(msg);
+      } else {
+        setDocError(msg);
+      }
     }
-
-    if (type === "photo") {
-      setPhotoFiles((prev) => prev.filter((f) => f.id !== fileId));
-    } else {
-      setDocFiles((prev) => prev.filter((f) => f.id !== fileId));
-    }
-  } catch (err: any) {
-    console.error("FILE DELETE UNEXPECTED ERROR:", err);
-    const msg =
-      err?.message ??
-      "Ismeretlen hiba történt törlés közben. Próbáld újra később.";
-    if (type === "photo") {
-      setPhotoError(msg);
-    } else {
-      setDocError(msg);
-    }
-  }
-};
+  };
 
   const handleRenameFile = async (file: TripFile) => {
     const newName = prompt("Új név:", file.name);
@@ -952,91 +770,6 @@ const handleDeleteFile = async (
       } else {
         setDocError(err?.message ?? "Ismeretlen hiba történt.");
       }
-    }
-  };
-
-  const handleExpenseSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!user || !trip) return;
-
-    setSubmittingExpense(true);
-    setExpensesError(null);
-    setExpenseSuccess(null);
-
-    if (!expenseAmount) {
-      setExpensesError("Az összeg megadása kötelező.");
-      setSubmittingExpense(false);
-      return;
-    }
-
-    try {
-      const parsedAmount = parseFloat(expenseAmount.replace(",", "."));
-      if (isNaN(parsedAmount)) {
-        setExpensesError("Érvénytelen összeg.");
-        setSubmittingExpense(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("trip_expenses")
-        .insert({
-          trip_id: trip.id,
-          user_id: user.id,
-          date: expenseDate || new Date().toISOString().slice(0, 10),
-          category: expenseCategory.trim() || null,
-          note: expenseNote.trim() || null,
-          amount: parsedAmount,
-          currency: expenseCurrency || "EUR",
-          payment_method: expensePaymentMethod.trim() || null,
-        })
-        .select("id, date, category, note, amount, currency, payment_method")
-        .single();
-
-      if (error || !data) {
-        console.error("EXPENSE INSERT ERROR:", error);
-        setExpensesError(
-          error?.message ?? "Nem sikerült elmenteni a költséget."
-        );
-      } else {
-        setExpenses((prev) => [...prev, data as Expense]);
-        setExpenseSuccess("Költség sikeresen rögzítve.");
-        setExpenseDate("");
-        setExpenseCategory("");
-        setExpenseNote("");
-        setExpenseAmount("");
-        setExpensePaymentMethod("");
-      }
-    } catch (err: any) {
-      console.error("EXPENSE SUBMIT ERROR:", err);
-      setExpensesError(err?.message ?? "Ismeretlen hiba történt.");
-    } finally {
-      setSubmittingExpense(false);
-    }
-  };
-
-  const handleNoteSave = async () => {
-    if (!trip) return;
-    setSavingNote(true);
-    setNoteError(null);
-    setNoteSuccess(null);
-
-    try {
-      const { error } = await supabase
-        .from("trips")
-        .update({ notes: noteInput })
-        .eq("id", trip.id);
-
-      if (error) {
-        console.error("NOTE UPDATE ERROR:", error);
-        setNoteError(error?.message ?? "Nem sikerült elmenteni a jegyzetet.");
-      } else {
-        setNoteSuccess("Jegyzet elmentve.");
-      }
-    } catch (err: any) {
-      console.error("NOTE SAVE ERROR:", err);
-      setNoteError(err?.message ?? "Ismeretlen hiba történt.");
-    } finally {
-      setSavingNote(false);
     }
   };
 
@@ -1087,6 +820,17 @@ const handleDeleteFile = async (
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
   })();
 
+  const maxCategoryValue =
+    categoryTotals.reduce((max, c) => Math.max(max, c.value), 0) || 0;
+
+  const handleScrollToStats = () => {
+    if (typeof document === "undefined") return;
+    const el = document.getElementById("trip-stats");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-5xl mx-auto px-4 py-6">
@@ -1102,7 +846,7 @@ const handleDeleteFile = async (
 
         {/* Fő info kártya */}
         <section className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-slate-100">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold mb-1">{trip.title}</h1>
               <p className="text-sm text-slate-600 mb-1">
@@ -1119,18 +863,43 @@ const handleDeleteFile = async (
               )}
             </div>
 
-            <div className="flex flex-col items-start md:items-end gap-2">
-              {isOwner && (
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#16ba53]/10 text-[#16ba53] text-xs font-semibold">
-                  Te vagy az utazás tulajdonosa
-                </span>
-              )}
-              {user?.email && (
-                <div className="text-right text-[11px] text-slate-500">
-                  <p className="font-semibold">Bejelentkezve:</p>
-                  <p>{user.email}</p>
-                </div>
-              )}
+            <div className="flex flex-col items-start md:items-end gap-3 w-full md:w-auto">
+              <div className="flex flex-col items-start md:items-end gap-1">
+                {isOwner && (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#16ba53]/10 text-[#16ba53] text-xs font-semibold">
+                    Te vagy az utazás tulajdonosa
+                  </span>
+                )}
+                {user?.email && (
+                  <div className="text-right text-[11px] text-slate-500">
+                    <p className="font-semibold">Bejelentkezve:</p>
+                    <p>{user.email}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 justify-end w-full">
+                <Link
+                  href={`/trip/${trip.id}/invite`}
+                  className="px-3 py-1.5 rounded-full border border-[#16ba53]/60 text-xs font-medium text-[#16ba53] hover:bg-[#16ba53]/5 transition"
+                >
+                  Meghívó link
+                </Link>
+                <button
+                  type="button"
+                  disabled
+                  className="px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 text-xs font-medium text-slate-400 cursor-not-allowed"
+                >
+                  TripTerv (hamarosan)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleScrollToStats}
+                  className="px-3 py-1.5 rounded-full bg-[#16ba53] text-white text-xs font-medium hover:opacity-90 transition"
+                >
+                  Statisztika
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -1140,45 +909,14 @@ const handleDeleteFile = async (
           {/* Fotók */}
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">Fotók</h2>
-            <p className="text-xs text-slate-500 mb-2">
-              Töltsd fel a képeket a saját Google Drive-odra, vagy töltsd fel
-              közvetlenül az eszközödről – mi elmentjük a TripLog mappádba.
+            <p className="text-xs text-slate-500 mb-3">
+              Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
+              automatikusan elmenti őket az utazás Google Drive mappájába.
             </p>
 
             <div className="space-y-2 mb-3">
-              <input
-                type="text"
-                className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
-                placeholder="Kép neve (pl.: Tengerpart naplemente)"
-                value={photoName}
-                onChange={(e) => {
-                  setPhotoName(e.target.value);
-                  setPhotoError(null);
-                  setPhotoSuccess(null);
-                }}
-              />
-              <input
-                type="text"
-                className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
-                placeholder="Google Drive megosztási link (opcionális)"
-                value={photoLink}
-                onChange={(e) => {
-                  setPhotoLink(e.target.value);
-                  setPhotoError(null);
-                  setPhotoSuccess(null);
-                }}
-              />
               <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleAddFile("photo")}
-                  disabled={submittingPhoto}
-                  className="flex-1 py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
-                >
-                  {submittingPhoto ? "Mentés..." : "Fotó hozzáadása linkkel"}
-                </button>
-
-                <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 text-center cursor-pointer hover:bg-slate-50">
+                <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl bg-[#16ba53] text-white text-center cursor-pointer hover:opacity-90 transition font-medium">
                   {submittingPhoto ? "Feltöltés..." : "Feltöltés eszközről"}
                   <input
                     type="file"
@@ -1208,7 +946,9 @@ const handleDeleteFile = async (
             </div>
 
             {loadingFiles && (
-              <p className="text-[11px] text-slate-500">Fotók betöltése...</p>
+              <p className="text-[11px] text-slate-500">
+                Fotók betöltése...
+              </p>
             )}
 
             {filesError && (
@@ -1260,15 +1000,15 @@ const handleDeleteFile = async (
                       >
                         Átnevezés
                       </button>
-<button
-  type="button"
-  onClick={() =>
-    handleDeleteFile(file.id, "photo", file.drive_file_id)
-  }
-  className="text-[10px] text-red-500 underline"
->
-  Törlés
-</button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleDeleteFile(file.id, "photo", file.drive_file_id)
+                        }
+                        className="text-[10px] text-red-500 underline"
+                      >
+                        Törlés
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1279,45 +1019,15 @@ const handleDeleteFile = async (
           {/* Dokumentumok */}
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">Dokumentumok</h2>
-            <p className="text-xs text-slate-500 mb-2">
-              Foglalások, beszállókártyák, jegyek – töltsd fel Drive-ra
-              közvetlenül az eszközödről, vagy illeszd be a megosztási linket.
+            <p className="text-xs text-slate-500 mb-3">
+              Foglalások, beszállókártyák, jegyek és más fontos dokumentumok –
+              töltsd fel őket közvetlenül az eszközödről, mi elmentjük az
+              utazás mappájába.
             </p>
 
             <div className="space-y-2 mb-3">
-              <input
-                type="text"
-                className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
-                placeholder="Dokumentum neve (pl.: Repülőjegy PDF)"
-                value={docName}
-                onChange={(e) => {
-                  setDocName(e.target.value);
-                  setDocError(null);
-                  setDocSuccess(null);
-                }}
-              />
-              <input
-                type="text"
-                className="w-full border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
-                placeholder="Google Drive megosztási link (opcionális)"
-                value={docLink}
-                onChange={(e) => {
-                  setDocLink(e.target.value);
-                  setDocError(null);
-                  setDocSuccess(null);
-                }}
-              />
               <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleAddFile("document")}
-                  disabled={submittingDoc}
-                  className="flex-1 py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
-                >
-                  {submittingDoc ? "Mentés..." : "Dokumentum hozzáadása linkkel"}
-                </button>
-
-                <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 text-center cursor-pointer hover:bg-slate-50">
+                <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl bg-[#16ba53] text-white text-center cursor-pointer hover:opacity-90 transition font-medium">
                   {submittingDoc ? "Feltöltés..." : "Feltöltés eszközről"}
                   <input
                     type="file"
@@ -1378,15 +1088,18 @@ const handleDeleteFile = async (
                         Átnevezés
                       </button>
                       <button
-  type="button"
-  onClick={() =>
-    handleDeleteFile(file.id, "document", file.drive_file_id)
-  }
-  className="text-[10px] text-red-500 underline"
->
-  Törlés
-</button>
-
+                        type="button"
+                        onClick={() =>
+                          handleDeleteFile(
+                            file.id,
+                            "document",
+                            file.drive_file_id
+                          )
+                        }
+                        className="text-[10px] text-red-500 underline"
+                      >
+                        Törlés
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1594,8 +1307,8 @@ const handleDeleteFile = async (
           </div>
         </section>
 
-        {/* Költségek statisztika – szöveges összefoglaló */}
-        <section className="mt-4">
+        {/* Költségek statisztika – csinosított szekció */}
+        <section id="trip-stats" className="mt-4">
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
             <h2 className="text-sm font-semibold mb-2">
               Költségek statisztika
@@ -1609,28 +1322,46 @@ const handleDeleteFile = async (
 
             {expenses.length > 0 && (
               <>
-                <p className="text-xs text-slate-500 mb-3">
-                  Összes költés:{" "}
-                  <span className="font-semibold">
-                    {totalAmount.toFixed(2)} {mainCurrency}
+                <div className="flex flex-wrap gap-2 mb-3 text-xs">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-[#16ba53]/10 text-[#16ba53] font-semibold">
+                    Összes költés:{" "}
+                    <span className="ml-1">
+                      {totalAmount.toFixed(2)} {mainCurrency}
+                    </span>
                   </span>
-                </p>
-
-                <div className="space-y-1 text-xs">
-                  {categoryTotals.map((cat) => (
-                    <div
-                      key={cat.name}
-                      className="flex items-center justify-between border-b border-slate-100 py-1"
-                    >
-                      <span className="text-slate-600">{cat.name}</span>
-                      <span className="font-semibold">
-                        {cat.value.toFixed(2)} {mainCurrency}
-                      </span>
-                    </div>
-                  ))}
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
+                    Kategóriák száma:{" "}
+                    <span className="ml-1">{categoryTotals.length}</span>
+                  </span>
                 </div>
 
-                <p className="mt-2 text-[11px] text-slate-400">
+                <div className="space-y-2 text-xs">
+                  {categoryTotals.map((cat) => {
+                    const ratio = maxCategoryValue
+                      ? cat.value / maxCategoryValue
+                      : 0;
+                    const width = Math.max(ratio * 100, 5); // hogy látszódjon a very small is
+
+                    return (
+                      <div key={cat.name}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-slate-600">{cat.name}</span>
+                          <span className="font-semibold">
+                            {cat.value.toFixed(2)} {mainCurrency}
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[#16ba53]"
+                            style={{ width: `${width}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p className="mt-3 text-[11px] text-slate-400">
                   A kategóriák a rögzített költségek „Kategória” mezője alapján
                   számolódnak. Ha több pénznemet használsz, az összesítés csak
                   közelítő.
