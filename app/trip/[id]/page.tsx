@@ -808,45 +808,75 @@ export default function TripDetailPage() {
     }
   };
 
-const handleDeleteFile = async (
-  fileId: string,
-  type: "photo" | "document",
-  driveFileId: string
-) => {
-  if (!confirm("Biztosan törlöd ezt az elemet?")) return;
+const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
+  if (!user) return;
+
+  const file =
+    type === "photo"
+      ? photoFiles.find((f) => f.id === fileId)
+      : docFiles.find((f) => f.id === fileId);
+
+  if (!file) return;
+
+  const confirmed = confirm("Biztosan törlöd ezt a fájlt?");
+  if (!confirmed) return;
+
+  // töröljük a korábbi hibaüzenetet
+  if (type === "photo") {
+    setPhotoError(null);
+  } else {
+    setDocError(null);
+  }
 
   try {
-    // 1) Megpróbáljuk a fájlt a Google Drive-ból is törölni (best-effort)
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    // 1) próbáljuk törölni a Drive-ból AZ AKTUÁLIS USER tokenjével
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-      const accessToken = session?.provider_token as string | undefined;
+    const accessToken = session?.provider_token as string | undefined;
 
-      if (accessToken && driveFileId) {
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${driveFileId}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          }
-        );
-
-        if (!res.ok && res.status !== 404) {
-          const txt = await res.text();
-          console.error("DRIVE FILE DELETE ERROR:", txt);
-          // ha nem sikerül, attól még az appból töröljük a rekordot
+    if (accessToken) {
+      const driveRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
         }
+      );
+
+      if (!driveRes.ok && driveRes.status !== 404) {
+        // 403 / 401 → nincs jogunk törölni → NEM törlünk az adatbázisból sem
+        if (driveRes.status === 403 || driveRes.status === 401) {
+          const msg =
+            "Ezt a fájlt valószínűleg egy másik utazó hozta létre. Csak ő vagy a Google Drive felületén tudja törölni.";
+          if (type === "photo") {
+            setPhotoError(msg);
+          } else {
+            setDocError(msg);
+          }
+          return;
+        }
+
+        // egyéb hiba: inkább NE töröljük az appból se, hogy ne csússzanak szét
+        const txt = await driveRes.text().catch(() => "");
+        console.error("DRIVE DELETE ERROR:", driveRes.status, txt);
+
+        const msg =
+          "Nem sikerült törölni a fájlt a Google Drive-ról. Próbáld meg később, vagy töröld közvetlenül a Drive felületén.";
+        if (type === "photo") {
+          setPhotoError(msg);
+        } else {
+          setDocError(msg);
+        }
+        return;
       }
-    } catch (driveErr) {
-      console.error("DRIVE FILE DELETE FETCH ERROR:", driveErr);
-      // itt sem dobunk tovább, hogy az app ne omoljon el
+      // ha ok vagy 404: mehet tovább az app oldali törlés
     }
 
-    // 2) Supabase rekord törlése
+    // 2) törlés az adatbázisból
     const { error } = await supabase
       .from("trip_files")
       .delete()
@@ -854,24 +884,30 @@ const handleDeleteFile = async (
 
     if (error) {
       console.error("FILE DELETE ERROR:", error);
+      const msg = "Nem sikerült törölni a fájlt az alkalmazásból.";
       if (type === "photo") {
-        setPhotoError(error?.message ?? "Nem sikerült törölni a fotót.");
+        setPhotoError(error.message ?? msg);
       } else {
-        setDocError(error?.message ?? "Nem sikerült törölni a dokumentumot.");
+        setDocError(error.message ?? msg);
       }
+      return;
+    }
+
+    // 3) lokális state frissítés
+    if (type === "photo") {
+      setPhotoFiles((prev) => prev.filter((f) => f.id !== fileId));
     } else {
-      if (type === "photo") {
-        setPhotoFiles((prev) => prev.filter((f) => f.id !== fileId));
-      } else {
-        setDocFiles((prev) => prev.filter((f) => f.id !== fileId));
-      }
+      setDocFiles((prev) => prev.filter((f) => f.id !== fileId));
     }
   } catch (err: any) {
-    console.error("FILE DELETE ERROR:", err);
+    console.error("FILE DELETE UNEXPECTED ERROR:", err);
+    const msg =
+      err?.message ??
+      "Ismeretlen hiba történt törlés közben. Próbáld újra később.";
     if (type === "photo") {
-      setPhotoError(err?.message ?? "Ismeretlen hiba történt.");
+      setPhotoError(msg);
     } else {
-      setDocError(err?.message ?? "Ismeretlen hiba történt.");
+      setDocError(msg);
     }
   }
 };
