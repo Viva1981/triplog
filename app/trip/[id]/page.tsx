@@ -808,43 +808,73 @@ export default function TripDetailPage() {
     }
   };
 
-  const handleDeleteFile = async (
-    fileId: string,
-    type: "photo" | "document"
-  ) => {
-    if (!confirm("Biztosan törlöd ezt az elemet?")) return;
+const handleDeleteFile = async (
+  fileId: string,
+  type: "photo" | "document",
+  driveFileId: string
+) => {
+  if (!confirm("Biztosan törlöd ezt az elemet?")) return;
 
+  try {
+    // 1) Megpróbáljuk a fájlt a Google Drive-ból is törölni (best-effort)
     try {
-      const { error } = await supabase
-        .from("trip_files")
-        .delete()
-        .eq("id", fileId);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      if (error) {
-        console.error("FILE DELETE ERROR:", error);
-        if (type === "photo") {
-          setPhotoError(error?.message ?? "Nem sikerült törölni a fotót.");
-        } else {
-          setDocError(
-            error?.message ?? "Nem sikerült törölni a dokumentumot."
-          );
-        }
-      } else {
-        if (type === "photo") {
-          setPhotoFiles((prev) => prev.filter((f) => f.id !== fileId));
-        } else {
-          setDocFiles((prev) => prev.filter((f) => f.id !== fileId));
+      const accessToken = session?.provider_token as string | undefined;
+
+      if (accessToken && driveFileId) {
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${driveFileId}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+
+        if (!res.ok && res.status !== 404) {
+          const txt = await res.text();
+          console.error("DRIVE FILE DELETE ERROR:", txt);
+          // ha nem sikerül, attól még az appból töröljük a rekordot
         }
       }
-    } catch (err: any) {
-      console.error("FILE DELETE ERROR:", err);
+    } catch (driveErr) {
+      console.error("DRIVE FILE DELETE FETCH ERROR:", driveErr);
+      // itt sem dobunk tovább, hogy az app ne omoljon el
+    }
+
+    // 2) Supabase rekord törlése
+    const { error } = await supabase
+      .from("trip_files")
+      .delete()
+      .eq("id", fileId);
+
+    if (error) {
+      console.error("FILE DELETE ERROR:", error);
       if (type === "photo") {
-        setPhotoError(err?.message ?? "Ismeretlen hiba történt.");
+        setPhotoError(error?.message ?? "Nem sikerült törölni a fotót.");
       } else {
-        setDocError(err?.message ?? "Ismeretlen hiba történt.");
+        setDocError(error?.message ?? "Nem sikerült törölni a dokumentumot.");
+      }
+    } else {
+      if (type === "photo") {
+        setPhotoFiles((prev) => prev.filter((f) => f.id !== fileId));
+      } else {
+        setDocFiles((prev) => prev.filter((f) => f.id !== fileId));
       }
     }
-  };
+  } catch (err: any) {
+    console.error("FILE DELETE ERROR:", err);
+    if (type === "photo") {
+      setPhotoError(err?.message ?? "Ismeretlen hiba történt.");
+    } else {
+      setDocError(err?.message ?? "Ismeretlen hiba történt.");
+    }
+  }
+};
 
   const handleRenameFile = async (file: TripFile) => {
     const newName = prompt("Új név:", file.name);
@@ -1197,13 +1227,15 @@ export default function TripDetailPage() {
                       >
                         Átnevezés
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFile(file.id, "photo")}
-                        className="text-[10px] text-red-500 underline"
-                      >
-                        Törlés
-                      </button>
+<button
+  type="button"
+  onClick={() =>
+    handleDeleteFile(file.id, "photo", file.drive_file_id)
+  }
+  className="text-[10px] text-red-500 underline"
+>
+  Törlés
+</button>
                     </div>
                   </div>
                 ))}
@@ -1313,12 +1345,15 @@ export default function TripDetailPage() {
                         Átnevezés
                       </button>
                       <button
-                        type="button"
-                        onClick={() => handleDeleteFile(file.id, "document")}
-                        className="text-[10px] text-red-500 underline"
-                      >
-                        Törlés
-                      </button>
+  type="button"
+  onClick={() =>
+    handleDeleteFile(file.id, "document", file.drive_file_id)
+  }
+  className="text-[10px] text-red-500 underline"
+>
+  Törlés
+</button>
+
                     </div>
                   </div>
                 ))}
