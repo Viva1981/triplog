@@ -808,7 +808,11 @@ export default function TripDetailPage() {
     }
   };
 
-const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
+const handleDeleteFile = async (
+  fileId: string,
+  type: "photo" | "document",
+  driveFileId?: string // <- ezt hozzáadtuk, hogy a 3. paraméter is elfogadott legyen
+) => {
   if (!user) return;
 
   const file =
@@ -821,7 +825,6 @@ const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
   const confirmed = confirm("Biztosan törlöd ezt a fájlt?");
   if (!confirmed) return;
 
-  // töröljük a korábbi hibaüzenetet
   if (type === "photo") {
     setPhotoError(null);
   } else {
@@ -829,7 +832,6 @@ const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
   }
 
   try {
-    // 1) próbáljuk törölni a Drive-ból AZ AKTUÁLIS USER tokenjével
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -848,7 +850,6 @@ const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
       );
 
       if (!driveRes.ok && driveRes.status !== 404) {
-        // 403 / 401 → nincs jogunk törölni → NEM törlünk az adatbázisból sem
         if (driveRes.status === 403 || driveRes.status === 401) {
           const msg =
             "Ezt a fájlt valószínűleg egy másik utazó hozta létre. Csak ő vagy a Google Drive felületén tudja törölni.";
@@ -860,7 +861,6 @@ const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
           return;
         }
 
-        // egyéb hiba: inkább NE töröljük az appból se, hogy ne csússzanak szét
         const txt = await driveRes.text().catch(() => "");
         console.error("DRIVE DELETE ERROR:", driveRes.status, txt);
 
@@ -873,10 +873,8 @@ const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
         }
         return;
       }
-      // ha ok vagy 404: mehet tovább az app oldali törlés
     }
 
-    // 2) törlés az adatbázisból
     const { error } = await supabase
       .from("trip_files")
       .delete()
@@ -893,7 +891,6 @@ const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
       return;
     }
 
-    // 3) lokális state frissítés
     if (type === "photo") {
       setPhotoFiles((prev) => prev.filter((f) => f.id !== fileId));
     } else {
