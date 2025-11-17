@@ -141,6 +141,65 @@ function getBaseName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "");
 }
 
+// Eseménynapló fájl létrehozása a trip mappában (owner Drive-ján)
+async function createTripLogFile(
+  accessToken: string,
+  folderId: string,
+  trip: Trip
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const lines = [
+    "TripLog event log",
+    "",
+    `[${nowIso}] Trip created: ${trip.title}`,
+    `[${nowIso}] Event log file created.`,
+    "",
+  ];
+  const fileContent = lines.join("\n");
+
+  const boundary = "-------314159265358979323846";
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
+  const metadata = {
+    name: "triplog-log.txt",
+    mimeType: "text/plain",
+    parents: [folderId],
+  };
+
+  // Csak ASCII, ezért jó a sima btoa
+  const base64Data = btoa(fileContent);
+
+  const multipartRequestBody =
+    delimiter +
+    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+    JSON.stringify(metadata) +
+    delimiter +
+    "Content-Type: text/plain; charset=UTF-8\r\n" +
+    "Content-Transfer-Encoding: base64\r\n" +
+    "\r\n" +
+    base64Data +
+    closeDelimiter;
+
+  const res = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body: multipartRequestBody,
+    }
+  );
+
+  if (!res.ok) {
+    const txt = await res.text();
+    console.error("TRIP LOG CREATE ERROR:", txt);
+    // Nem dobjuk tovább, ne törje el az appot
+  }
+}
+
 export default function TripDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -339,90 +398,6 @@ export default function TripDetailPage() {
     }
   }, [tripId, user, trip]);
 
-  const handleExpenseSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!user || !trip) return;
-
-    setSubmittingExpense(true);
-    setExpensesError(null);
-    setExpenseSuccess(null);
-
-    if (!expenseAmount) {
-      setExpensesError("Az összeg megadása kötelező.");
-      setSubmittingExpense(false);
-      return;
-    }
-
-    try {
-      const parsedAmount = parseFloat(expenseAmount.replace(",", "."));
-      if (isNaN(parsedAmount)) {
-        setExpensesError("Érvénytelen összeg.");
-        setSubmittingExpense(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("trip_expenses")
-        .insert({
-          trip_id: trip.id,
-          user_id: user.id,
-          date: expenseDate || new Date().toISOString().slice(0, 10),
-          category: expenseCategory.trim() || null,
-          note: expenseNote.trim() || null,
-          amount: parsedAmount,
-          currency: expenseCurrency || "EUR",
-          payment_method: expensePaymentMethod.trim() || null,
-        })
-        .select("id, date, category, note, amount, currency, payment_method")
-        .single();
-
-      if (error || !data) {
-        console.error("EXPENSE INSERT ERROR:", error);
-        setExpensesError(
-          error?.message ?? "Nem sikerült elmenteni a költséget."
-        );
-      } else {
-        setExpenses((prev) => [...prev, data as Expense]);
-        setExpenseSuccess("Költség sikeresen rögzítve.");
-        setExpenseDate("");
-        setExpenseCategory("");
-        setExpenseNote("");
-        setExpenseAmount("");
-        setExpensePaymentMethod("");
-      }
-    } catch (err: any) {
-      console.error("EXPENSE SUBMIT ERROR:", err);
-      setExpensesError(err?.message ?? "Ismeretlen hiba történt.");
-    } finally {
-      setSubmittingExpense(false);
-    }
-  };
-
-  const handleNoteSave = async () => {
-    if (!trip) return;
-    setSavingNote(true);
-    setNoteError(null);
-    setNoteSuccess(null);
-
-    try {
-      const { error } = await supabase
-        .from("trips")
-        .update({ notes: noteInput })
-        .eq("id", trip.id);
-
-      if (error) {
-        console.error("NOTE UPDATE ERROR:", error);
-        setNoteError(error?.message ?? "Nem sikerült elmenteni a jegyzetet.");
-      } else {
-        setNoteSuccess("Jegyzet elmentve.");
-      }
-    } catch (err: any) {
-      console.error("NOTE SAVE ERROR:", err);
-      setNoteError(err?.message ?? "Ismeretlen hiba történt.");
-    } finally {
-      setSavingNote(false);
-    }
-  };
   // Trip-hez tartozó Drive mappa biztosítása (TripLog / YYMMDD - Dest)
   const ensureTripFolder = async (accessToken: string): Promise<string> => {
     if (!trip) {
@@ -568,6 +543,43 @@ export default function TripDetailPage() {
 
     return folderId;
   };
+
+  // Owner nézetben: Drive mappa + eseménynapló biztosítása a trip megnyitásakor
+  useEffect(() => {
+    const ensureOwnerFolderAndLog = async () => {
+      if (!trip || !user) return;
+      if (user.id !== trip.owner_id) return; // csak az owner Drive-ján dolgozunk
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const accessToken = session?.provider_token as string | undefined;
+        if (!accessToken) {
+          console.warn(
+            "Nincs Google hozzáférési token az utazás megnyitásakor – Drive mappa később, feltöltéskor is létrejön."
+          );
+          return;
+        }
+
+        const hadFolderBefore = !!trip.drive_folder_id;
+        const folderId = await ensureTripFolder(accessToken);
+
+        if (!hadFolderBefore && folderId) {
+          try {
+            await createTripLogFile(accessToken, folderId, trip);
+          } catch (err) {
+            console.error("TRIP LOG CREATE (owner view) ERROR:", err);
+          }
+        }
+      } catch (err) {
+        console.error("OWNER FOLDER ENSURE ERROR:", err);
+      }
+    };
+
+    ensureOwnerFolderAndLog();
+  }, [trip, user]);
 
   // Feltöltés Drive-ra + trip_files mentés
   const uploadFileToDriveAndSave = async (
@@ -796,7 +808,10 @@ export default function TripDetailPage() {
     }
   };
 
-  const handleDeleteFile = async (fileId: string, type: "photo" | "document") => {
+  const handleDeleteFile = async (
+    fileId: string,
+    type: "photo" | "document"
+  ) => {
     if (!confirm("Biztosan törlöd ezt az elemet?")) return;
 
     try {
@@ -874,6 +889,91 @@ export default function TripDetailPage() {
       } else {
         setDocError(err?.message ?? "Ismeretlen hiba történt.");
       }
+    }
+  };
+
+  const handleExpenseSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user || !trip) return;
+
+    setSubmittingExpense(true);
+    setExpensesError(null);
+    setExpenseSuccess(null);
+
+    if (!expenseAmount) {
+      setExpensesError("Az összeg megadása kötelező.");
+      setSubmittingExpense(false);
+      return;
+    }
+
+    try {
+      const parsedAmount = parseFloat(expenseAmount.replace(",", "."));
+      if (isNaN(parsedAmount)) {
+        setExpensesError("Érvénytelen összeg.");
+        setSubmittingExpense(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("trip_expenses")
+        .insert({
+          trip_id: trip.id,
+          user_id: user.id,
+          date: expenseDate || new Date().toISOString().slice(0, 10),
+          category: expenseCategory.trim() || null,
+          note: expenseNote.trim() || null,
+          amount: parsedAmount,
+          currency: expenseCurrency || "EUR",
+          payment_method: expensePaymentMethod.trim() || null,
+        })
+        .select("id, date, category, note, amount, currency, payment_method")
+        .single();
+
+      if (error || !data) {
+        console.error("EXPENSE INSERT ERROR:", error);
+        setExpensesError(
+          error?.message ?? "Nem sikerült elmenteni a költséget."
+        );
+      } else {
+        setExpenses((prev) => [...prev, data as Expense]);
+        setExpenseSuccess("Költség sikeresen rögzítve.");
+        setExpenseDate("");
+        setExpenseCategory("");
+        setExpenseNote("");
+        setExpenseAmount("");
+        setExpensePaymentMethod("");
+      }
+    } catch (err: any) {
+      console.error("EXPENSE SUBMIT ERROR:", err);
+      setExpensesError(err?.message ?? "Ismeretlen hiba történt.");
+    } finally {
+      setSubmittingExpense(false);
+    }
+  };
+
+  const handleNoteSave = async () => {
+    if (!trip) return;
+    setSavingNote(true);
+    setNoteError(null);
+    setNoteSuccess(null);
+
+    try {
+      const { error } = await supabase
+        .from("trips")
+        .update({ notes: noteInput })
+        .eq("id", trip.id);
+
+      if (error) {
+        console.error("NOTE UPDATE ERROR:", error);
+        setNoteError(error?.message ?? "Nem sikerült elmenteni a jegyzetet.");
+      } else {
+        setNoteSuccess("Jegyzet elmentve.");
+      }
+    } catch (err: any) {
+      console.error("NOTE SAVE ERROR:", err);
+      setNoteError(err?.message ?? "Ismeretlen hiba történt.");
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -1045,9 +1145,7 @@ export default function TripDetailPage() {
             </div>
 
             {loadingFiles && (
-              <p className="text-[11px] text-slate-500">
-                Fotók betöltése...
-              </p>
+              <p className="text-[11px] text-slate-500">Fotók betöltése...</p>
             )}
 
             {filesError && (
