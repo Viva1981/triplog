@@ -2,26 +2,17 @@
 
 import { useEffect, useState, FormEvent } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import type { TripExpense } from "../../../lib/trip/types";
 
 type ExpensesSectionProps = {
   tripId: string;
   userId: string | null;
 };
 
-type TripExpense = {
-  id: string;
-  trip_id: string;
-  user_id: string;
-  date: string;
-  category: string | null;
-  note: string | null;
-  amount: number;
-  currency: string;
-  payment_method: string | null;
-  created_at: string;
-};
-
-export default function ExpensesSection({ tripId, userId }: ExpensesSectionProps) {
+export default function ExpensesSection({
+  tripId,
+  userId,
+}: ExpensesSectionProps) {
   const [expenses, setExpenses] = useState<TripExpense[]>([]);
   const [loadingExpenses, setLoadingExpenses] = useState(true);
   const [expenseError, setExpenseError] = useState<string | null>(null);
@@ -127,7 +118,6 @@ export default function ExpensesSection({ tripId, userId }: ExpensesSectionProps
         setNote("");
         setAmount("");
         setPaymentMethod("");
-        // pénznemet meghagyjuk, hogy ne kelljen mindig újra beírni
       }
     } catch (e) {
       console.error(e);
@@ -137,12 +127,14 @@ export default function ExpensesSection({ tripId, userId }: ExpensesSectionProps
     }
   };
 
-  // Összesítés pénznem szerint
-  const totalsByCurrency = expenses.reduce<Record<string, number>>((acc, exp) => {
-    const cur = exp.currency || "EUR";
-    acc[cur] = (acc[cur] || 0) + (exp.amount || 0);
-    return acc;
-  }, {});
+  const totalsByCurrency = expenses.reduce<Record<string, number>>(
+    (acc, exp) => {
+      const cur = exp.currency || "EUR";
+      acc[cur] = (acc[cur] || 0) + (exp.amount || 0);
+      return acc;
+    },
+    {}
+  );
 
   return (
     <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">

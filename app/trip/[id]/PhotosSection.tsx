@@ -1,13 +1,5 @@
 import React from "react";
-
-type TripFile = {
-  id: string;
-  type: "photo" | "document";
-  name: string;
-  drive_file_id: string;
-  thumbnail_link: string | null;
-  preview_link: string | null;
-};
+import type { TripFile } from "../../../lib/trip/types";
 
 type PhotosSectionProps = {
   photoFiles: TripFile[];

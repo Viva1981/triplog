@@ -10,112 +10,18 @@ import DocumentsSection from "./DocumentsSection";
 import NotesSection from "./NotesSection";
 import ExpensesSection from "./ExpensesSection";
 import StatsSection from "./StatsSection";
+import { formatDate } from "../../../lib/trip/format";
+import {
+  buildTripFolderName,
+  getBaseName,
+  getOrCreateTripLogRootFolder,
+} from "../../../lib/trip/drive";
+import type { Trip, TripFile } from "../../../lib/trip/types";
 
 type User = {
   id: string;
   email?: string;
 };
-
-type Trip = {
-  id: string;
-  owner_id: string;
-  title: string;
-  destination: string | null;
-  date_from: string | null;
-  date_to: string | null;
-  notes: string | null;
-  drive_folder_id: string | null;
-};
-
-type TripFile = {
-  id: string;
-  type: "photo" | "document";
-  name: string;
-  drive_file_id: string;
-  thumbnail_link: string | null;
-  preview_link: string | null;
-};
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  try {
-    const d = new Date(dateStr);
-    return new Intl.DateTimeFormat("hu-HU", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(d);
-  } catch {
-    return dateStr ?? "";
-  }
-}
-
-// Trip mappa neve: 251115 - Miskolc Magyarország
-function buildTripFolderName(trip: Trip): string {
-  let prefix = "000000";
-  if (trip.date_from) {
-    const d = new Date(trip.date_from);
-    const yy = String(d.getFullYear()).slice(2);
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    prefix = `${yy}${mm}${dd}`;
-  }
-  const dest = trip.destination || "Ismeretlen desztináció";
-  return `${prefix} - ${dest}`;
-}
-
-// TripLog gyökér mappa lekérdezése / létrehozása
-async function getOrCreateTripLogRootFolder(
-  accessToken: string
-): Promise<string> {
-  const baseUrl = "https://www.googleapis.com/drive/v3/files";
-
-  const query = encodeURIComponent(
-    "mimeType='application/vnd.google-apps.folder' and name='TripLog' and 'root' in parents and trashed=false"
-  );
-
-  const searchRes = await fetch(`${baseUrl}?q=${query}&fields=files(id,name)`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  const searchData = await searchRes.json();
-  if (searchData.files && searchData.files.length > 0) {
-    return searchData.files[0].id as string;
-  }
-
-  const createRes = await fetch(baseUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: "TripLog",
-      mimeType: "application/vnd.google-apps.folder",
-      parents: ["root"],
-    }),
-  });
-
-  if (!createRes.ok) {
-    const txt = await createRes.text();
-    console.error("DRIVE ROOT FOLDER CREATE ERROR:", txt);
-    throw new Error("Nem sikerült létrehozni a TripLog mappát a Drive-on.");
-  }
-
-  const created = await createRes.json();
-  if (!created.id) {
-    throw new Error("Nem sikerült létrehozni a TripLog mappát a Drive-on.");
-  }
-
-  return created.id as string;
-}
-
-// Fájlnévből levesszük a kiterjesztést
-function getBaseName(fileName: string): string {
-  return fileName.replace(/\.[^.]+$/, "");
-}
 
 export default function TripDetailPage() {
   const router = useRouter();

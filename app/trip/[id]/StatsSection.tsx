@@ -2,18 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import type { TripExpense } from "../../../lib/trip/types";
 
 type StatsSectionProps = {
   tripId: string;
-};
-
-type TripExpense = {
-  id: string;
-  trip_id: string;
-  date: string;
-  category: string | null;
-  amount: number;
-  currency: string;
 };
 
 export default function StatsSection({ tripId }: StatsSectionProps) {
@@ -97,7 +89,6 @@ export default function StatsSection({ tripId }: StatsSectionProps) {
     );
   }
 
-  // Összes költés pénznem szerint
   const totalsByCurrency = expenses.reduce<Record<string, number>>(
     (acc, exp) => {
       const cur = exp.currency || "EUR";
@@ -107,7 +98,6 @@ export default function StatsSection({ tripId }: StatsSectionProps) {
     {}
   );
 
-  // Kategória szerinti összesítés (pénznemet most figyelmen kívül hagyjuk, mint eddig)
   const totalsByCategoryMap = expenses.reduce<
     Record<string, { amount: number; currency: string }>
   >((acc, exp) => {

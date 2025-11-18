@@ -1,13 +1,5 @@
 import React from "react";
-
-type TripFile = {
-  id: string;
-  type: "photo" | "document";
-  name: string;
-  drive_file_id: string;
-  thumbnail_link: string | null;
-  preview_link: string | null;
-};
+import type { TripFile } from "../../../lib/trip/types";
 
 type DocumentsSectionProps = {
   docFiles: TripFile[];
@@ -79,7 +71,9 @@ export default function DocumentsSection({
       </div>
 
       {loadingFiles && (
-        <p className="text-[11px] text-slate-500">Dokumentumok betöltése...</p>
+        <p className="text-[11px] text-slate-500">
+          Dokumentumok betöltése...
+        </p>
       )}
 
       {filesError && (
