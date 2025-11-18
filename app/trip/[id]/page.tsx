@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 import TripHeader from "./TripHeader";
+import PhotosSection from "./PhotosSection";
+import DocumentsSection from "./DocumentsSection";
 
 type User = {
   id: string;
@@ -858,206 +860,29 @@ export default function TripDetailPage() {
 
         {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
         <section className="grid gap-4 md:grid-cols-2 mb-4">
-          {/* Fotók */}
-          <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
-            <h2 className="text-sm font-semibold mb-2">Fotók</h2>
-            <p className="text-xs text-slate-500 mb-3">
-              Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
-              automatikusan elmenti őket az utazás Google Drive mappájába.
-            </p>
+          <PhotosSection
+            photoFiles={photoFiles}
+            loadingFiles={loadingFiles}
+            filesError={filesError}
+            submittingPhoto={submittingPhoto}
+            photoError={photoError}
+            photoSuccess={photoSuccess}
+            uploadFileToDriveAndSave={uploadFileToDriveAndSave}
+            handleRenameFile={handleRenameFile}
+            handleDeleteFile={handleDeleteFile}
+          />
 
-            <div className="space-y-2 mb-3">
-              <div className="flex items-center justify-between gap-2">
-                <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl bg-[#16ba53] text-white text-center cursor-pointer hover:opacity-90 transition font-medium">
-                  {submittingPhoto ? "Feltöltés..." : "Feltöltés eszközről"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        uploadFileToDriveAndSave("photo", file);
-                        e.target.value = "";
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-
-              {photoError && (
-                <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
-                  {photoError}
-                </div>
-              )}
-              {photoSuccess && (
-                <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
-                  {photoSuccess}
-                </div>
-              )}
-            </div>
-
-            {loadingFiles && (
-              <p className="text-[11px] text-slate-500">
-                Fotók betöltése...
-              </p>
-            )}
-
-            {filesError && (
-              <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1 mb-2">
-                {filesError}
-              </div>
-            )}
-
-            {!loadingFiles && photoFiles.length === 0 && (
-              <p className="text-[11px] text-slate-500">
-                Még nincs egyetlen fotó sem ehhez az utazáshoz.
-              </p>
-            )}
-
-            {!loadingFiles && photoFiles.length > 0 && (
-              <div className="mt-2 grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-                {photoFiles.map((file) => (
-                  <div
-                    key={file.id}
-                    className="border border-slate-200 rounded-xl p-1.5 flex flex-col text-[11px]"
-                  >
-                    <a
-                      href={file.preview_link || "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block mb-1"
-                    >
-                      {file.thumbnail_link ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={file.thumbnail_link}
-                          alt={file.name}
-                          className="w-full h-24 object-cover rounded-lg"
-                        />
-                      ) : (
-                        <div className="w-full h-24 flex items-center justify-center bg-slate-100 rounded-lg">
-                          Nincs előnézet
-                        </div>
-                      )}
-                    </a>
-                    <div className="flex-1">
-                      <p className="font-medium line-clamp-2">{file.name}</p>
-                    </div>
-                    <div className="mt-1 flex justify-between gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleRenameFile(file)}
-                        className="text-[10px] text-slate-500 underline"
-                      >
-                        Átnevezés
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleDeleteFile(file.id, "photo", file.drive_file_id)
-                        }
-                        className="text-[10px] text-red-500 underline"
-                      >
-                        Törlés
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Dokumentumok */}
-          <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
-            <h2 className="text-sm font-semibold mb-2">Dokumentumok</h2>
-            <p className="text-xs text-slate-500 mb-3">
-              Foglalások, beszállókártyák, jegyek és más fontos dokumentumok –
-              töltsd fel őket közvetlenül az eszközödről, mi elmentjük az
-              utazás mappájába.
-            </p>
-
-            <div className="space-y-2 mb-3">
-              <div className="flex items-center justify-between gap-2">
-                <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl bg-[#16ba53] text-white text-center cursor-pointer hover:opacity-90 transition font-medium">
-                  {submittingDoc ? "Feltöltés..." : "Feltöltés eszközről"}
-                  <input
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        uploadFileToDriveAndSave("document", file);
-                        e.target.value = "";
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-
-              {docError && (
-                <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
-                  {docError}
-                </div>
-              )}
-              {docSuccess && (
-                <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
-                  {docSuccess}
-                </div>
-              )}
-            </div>
-
-            {!loadingFiles && docFiles.length === 0 && (
-              <p className="text-[11px] text-slate-500">
-                Még nincs egyetlen dokumentum sem ehhez az utazáshoz.
-              </p>
-            )}
-
-            {!loadingFiles && docFiles.length > 0 && (
-              <div className="mt-2 grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1">
-                {docFiles.map((file) => (
-                  <div
-                    key={file.id}
-                    className="border border-slate-200 rounded-xl p-2 flex items-center justify-between text-[11px]"
-                  >
-                    <div className="flex-1 mr-2">
-                      <p className="font-medium line-clamp-2">{file.name}</p>
-                      <a
-                        href={file.preview_link || "#"}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] text-[#16ba53] underline"
-                      >
-                        Megnyitás Drive-ban
-                      </a>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleRenameFile(file)}
-                        className="text-[10px] text-slate-500 underline"
-                      >
-                        Átnevezés
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleDeleteFile(
-                            file.id,
-                            "document",
-                            file.drive_file_id
-                          )
-                        }
-                        className="text-[10px] text-red-500 underline"
-                      >
-                        Törlés
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <DocumentsSection
+            docFiles={docFiles}
+            loadingFiles={loadingFiles}
+            filesError={filesError}
+            submittingDoc={submittingDoc}
+            docError={docError}
+            docSuccess={docSuccess}
+            uploadFileToDriveAndSave={uploadFileToDriveAndSave}
+            handleRenameFile={handleRenameFile}
+            handleDeleteFile={handleDeleteFile}
+          />
 
           {/* Jegyzet */}
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
