@@ -7,6 +7,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import TripHeader from "./TripHeader";
 import PhotosSection from "./PhotosSection";
 import DocumentsSection from "./DocumentsSection";
+import NotesSection from "./NotesSection";
 
 type User = {
   id: string;
@@ -884,45 +885,10 @@ export default function TripDetailPage() {
             handleDeleteFile={handleDeleteFile}
           />
 
-          {/* Jegyzet */}
-          <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
-            <h2 className="text-sm font-semibold mb-2">Jegyzet</h2>
-            <p className="text-xs text-slate-500 mb-2">
-              Ide írhatod az utazás terveit, emlékeket, fontos információkat.
-            </p>
-
-            <textarea
-              className="w-full border rounded-xl px-3 py-2 text-xs min-h-[120px] focus:outline-none focus:ring-1 focus:ring-[#16ba53]"
-              placeholder="Pl.: Érkezés 14:00-kor, találkozó a reptéren, első nap városnézés..."
-              value={noteInput}
-              onChange={(e) => {
-                setNoteInput(e.target.value);
-                setNoteError(null);
-                setNoteSuccess(null);
-              }}
-            />
-
-            {noteError && (
-              <div className="mt-2 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
-                {noteError}
-              </div>
-            )}
-
-            {noteSuccess && (
-              <div className="mt-2 text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
-                {noteSuccess}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleNoteSave}
-              disabled={savingNote}
-              className="mt-2 w-full py-1.5 px-3 rounded-xl font-medium bg-[#16ba53] text-white hover:opacity-90 disabled:opacity-60 transition text-xs"
-            >
-              {savingNote ? "Mentés..." : "Jegyzet mentése"}
-            </button>
-          </div>
+          <NotesSection
+            tripId={trip.id}
+            initialNotes={trip.notes ?? null}
+          />
 
           {/* Költségek – űrlap + lista */}
           <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
