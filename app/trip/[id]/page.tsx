@@ -9,7 +9,6 @@ import PhotosSection from "./PhotosSection";
 import DocumentsSection from "./DocumentsSection";
 import NotesSection from "./NotesSection";
 import ExpensesSection from "./ExpensesSection";
-import StatsSection from "./StatsSection";
 import { formatDate } from "../../../lib/trip/format";
 import {
   buildTripFolderName,
@@ -134,9 +133,7 @@ export default function TripDetailPage() {
 
       if (error) {
         console.error("FILES FETCH ERROR:", error);
-        setFilesError(
-          error.message ?? "Nem sikerült betölteni a fájlokat."
-        );
+        setFilesError(error.message ?? "Nem sikerült betölteni a fájlokat.");
       } else {
         const all = (data ?? []) as TripFile[];
         setPhotoFiles(all.filter((f) => f.type === "photo"));
@@ -561,16 +558,7 @@ export default function TripDetailPage() {
 
   const from = formatDate(trip.date_from);
   const to = formatDate(trip.date_to);
-
   const isOwner = !!(user && trip && user.id === trip.owner_id);
-
-  const handleScrollToStats = () => {
-    if (typeof document === "undefined") return;
-    const el = document.getElementById("trip-stats");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -592,7 +580,6 @@ export default function TripDetailPage() {
           from={from}
           to={to}
           isOwner={!!isOwner}
-          onScrollToStats={handleScrollToStats}
         />
 
         {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
@@ -631,8 +618,6 @@ export default function TripDetailPage() {
             userId={user?.id ?? null}
           />
         </section>
-
-        <StatsSection tripId={trip.id} />
       </div>
     </main>
   );

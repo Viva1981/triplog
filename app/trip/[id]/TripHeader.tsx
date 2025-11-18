@@ -16,7 +16,6 @@ type TripHeaderProps = {
   from: string;
   to: string;
   isOwner: boolean;
-  onScrollToStats: () => void;
 };
 
 type TripStatus =
@@ -113,7 +112,6 @@ export default function TripHeader({
   from,
   to,
   isOwner,
-  onScrollToStats,
 }: TripHeaderProps) {
   const [loadingStats, setLoadingStats] = useState(true);
   const [membersCount, setMembersCount] = useState<number | null>(null);
@@ -287,13 +285,12 @@ export default function TripHeader({
           TripTerv (hamarosan)
         </button>
 
-        <button
-          type="button"
-          onClick={onScrollToStats}
+        <Link
+          href={`/trip/${trip.id}/stats`}
           className="inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-[#16ba53] text-white text-xs font-medium hover:opacity-90 transition"
         >
           Statisztika
-        </button>
+        </Link>
       </div>
     </div>
   );
