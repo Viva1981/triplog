@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
@@ -25,16 +25,6 @@ type Trip = {
   date_to: string | null;
   notes: string | null;
   drive_folder_id: string | null;
-};
-
-type Expense = {
-  id: string;
-  date: string;
-  category: string | null;
-  note: string | null;
-  amount: number;
-  currency: string;
-  payment_method: string | null;
 };
 
 type TripFile = {
@@ -138,27 +128,6 @@ export default function TripDetailPage() {
   const [loadingTrip, setLoadingTrip] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Jegyzet állapot
-  const [noteInput, setNoteInput] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
-  const [noteError, setNoteError] = useState<string | null>(null);
-  const [noteSuccess, setNoteSuccess] = useState<string | null>(null);
-
-  // Költségek állapot
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loadingExpenses, setLoadingExpenses] = useState(false);
-  const [expensesError, setExpensesError] = useState<string | null>(null);
-
-  // Új költség űrlap
-  const [expenseDate, setExpenseDate] = useState("");
-  const [expenseCategory, setExpenseCategory] = useState("");
-  const [expenseNote, setExpenseNote] = useState("");
-  const [expenseAmount, setExpenseAmount] = useState("");
-  const [expenseCurrency, setExpenseCurrency] = useState("EUR");
-  const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
-  const [submittingExpense, setSubmittingExpense] = useState(false);
-  const [expenseSuccess, setExpenseSuccess] = useState<string | null>(null);
-
   // Fájlok állapot
   const [photoFiles, setPhotoFiles] = useState<TripFile[]>([]);
   const [docFiles, setDocFiles] = useState<TripFile[]>([]);
@@ -226,7 +195,6 @@ export default function TripDetailPage() {
       } else {
         const tripData = data as Trip;
         setTrip(tripData);
-        setNoteInput(tripData.notes ?? "");
       }
 
       setLoadingTrip(false);
@@ -236,41 +204,6 @@ export default function TripDetailPage() {
       fetchTrip();
     }
   }, [params, loadingUser]);
-
-  // Költségek betöltése
-  useEffect(() => {
-    const fetchExpenses = async () => {
-      const tripId = params?.id;
-      if (!tripId || Array.isArray(tripId) || !user) {
-        setExpenses([]);
-        return;
-      }
-
-      setLoadingExpenses(true);
-      setExpensesError(null);
-
-      const { data, error } = await supabase
-        .from("trip_expenses")
-        .select("id, date, category, note, amount, currency, payment_method")
-        .eq("trip_id", tripId)
-        .order("date", { ascending: true });
-
-      if (error) {
-        console.error("EXPENSES FETCH ERROR:", error);
-        setExpensesError(
-          error.message ?? "Nem sikerült betölteni a költségeket."
-        );
-      } else {
-        setExpenses((data ?? []) as Expense[]);
-      }
-
-      setLoadingExpenses(false);
-    };
-
-    if (user && trip) {
-      fetchExpenses();
-    }
-  }, [params, user, trip]);
 
   // Fájlok betöltése
   useEffect(() => {
@@ -311,94 +244,6 @@ export default function TripDetailPage() {
       fetchFiles();
     }
   }, [params, user, trip]);
-
-  const handleExpenseSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!user || !trip) return;
-
-    setSubmittingExpense(true);
-    setExpensesError(null);
-    setExpenseSuccess(null);
-
-    if (!expenseAmount) {
-      setExpensesError("Az összeg megadása kötelező.");
-      setSubmittingExpense(false);
-      return;
-    }
-
-    try {
-      const tripId = trip.id;
-      const parsedAmount = parseFloat(expenseAmount.replace(",", "."));
-      if (isNaN(parsedAmount)) {
-        setExpensesError("Érvénytelen összeg.");
-        setSubmittingExpense(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("trip_expenses")
-        .insert({
-          trip_id: tripId,
-          user_id: user.id,
-          date: expenseDate || new Date().toISOString().slice(0, 10),
-          category: expenseCategory.trim() || null,
-          note: expenseNote.trim() || null,
-          amount: parsedAmount,
-          currency: expenseCurrency || "EUR",
-          payment_method: expensePaymentMethod.trim() || null,
-        })
-        .select("id, date, category, note, amount, currency, payment_method")
-        .single();
-
-      if (error || !data) {
-        console.error("EXPENSE INSERT ERROR:", error);
-        setExpensesError(
-          error?.message ?? "Nem sikerült elmenteni a költséget."
-        );
-      } else {
-        setExpenses((prev) => [...prev, data as Expense]);
-        setExpenseSuccess("Költség sikeresen rögzítve.");
-        setExpenseDate("");
-        setExpenseCategory("");
-        setExpenseNote("");
-        setExpenseAmount("");
-        setExpensePaymentMethod("");
-      }
-    } catch (err: any) {
-      console.error("EXPENSE SUBMIT ERROR:", err);
-      setExpensesError(err?.message ?? "Ismeretlen hiba történt.");
-    } finally {
-      setSubmittingExpense(false);
-    }
-  };
-
-  const handleNoteSave = async () => {
-    if (!trip) return;
-    setSavingNote(true);
-    setNoteError(null);
-    setNoteSuccess(null);
-
-    try {
-      const { error } = await supabase
-        .from("trips")
-        .update({ notes: noteInput })
-        .eq("id", trip.id);
-
-      if (error) {
-        console.error("NOTE UPDATE ERROR:", error);
-        setNoteError(
-          error?.message ?? "Nem sikerült elmenteni a jegyzetet."
-        );
-      } else {
-        setNoteSuccess("Jegyzet elmentve.");
-      }
-    } catch (err: any) {
-      console.error("NOTE SAVE ERROR:", err);
-      setNoteError(err?.message ?? "Ismeretlen hiba történt.");
-    } finally {
-      setSavingNote(false);
-    }
-  };
 
   // Trip-hez tartozó Drive mappa biztosítása
   const ensureTripFolder = async (accessToken: string): Promise<string> => {
@@ -608,7 +453,9 @@ export default function TripDetailPage() {
 
       if (error || !data) {
         console.error("TRIP_FILES INSERT ERROR:", error);
-        throw new Error("A fájl feltöltése sikerült, de az app mentése nem.");
+        throw new Error(
+          "A fájl feltöltése sikerült, de az app mentése nem."
+        );
       }
 
       const newFile = data as TripFile;
@@ -811,24 +658,6 @@ export default function TripDetailPage() {
 
   const isOwner = !!(user && trip && user.id === trip.owner_id);
 
-  const totalAmount = expenses.reduce(
-    (sum, e) => sum + Number(e.amount || 0),
-    0
-  );
-  const mainCurrency = expenses[0]?.currency || expenseCurrency || "";
-
-  const categoryTotals = (() => {
-    const map = new Map<string, number>();
-    expenses.forEach((e) => {
-      const key = e.category?.trim() || "Egyéb";
-      map.set(key, (map.get(key) ?? 0) + Number(e.amount || 0));
-    });
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  })();
-
-  const maxCategoryValue =
-    categoryTotals.reduce((max, c) => Math.max(max, c.value), 0) || 0;
-
   const handleScrollToStats = () => {
     if (typeof document === "undefined") return;
     const el = document.getElementById("trip-stats");
@@ -850,7 +679,7 @@ export default function TripDetailPage() {
           </Link>
         </div>
 
-                {/* Fő info kártya */}
+        {/* Fő info kártya */}
         <TripHeader
           trip={trip}
           user={user}
@@ -859,7 +688,6 @@ export default function TripDetailPage() {
           isOwner={!!isOwner}
           onScrollToStats={handleScrollToStats}
         />
-
 
         {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
         <section className="grid gap-4 md:grid-cols-2 mb-4">
@@ -887,13 +715,19 @@ export default function TripDetailPage() {
             handleDeleteFile={handleDeleteFile}
           />
 
+          <NotesSection
+            tripId={trip.id}
+            initialNotes={trip.notes ?? null}
+          />
+
           <ExpensesSection
             tripId={trip.id}
             userId={user?.id ?? null}
           />
+        </section>
 
-      <StatsSection tripId={trip.id} />
-     </div>
+        <StatsSection tripId={trip.id} />
+      </div>
     </main>
   );
 }
