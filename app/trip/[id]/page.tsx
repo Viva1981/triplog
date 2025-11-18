@@ -804,7 +804,7 @@ export default function TripDetailPage() {
   const from = formatDate(trip.date_from);
   const to = formatDate(trip.date_to);
 
-  const isOwner = user && user.id === trip.owner_id;
+  const isOwner = !!(user && trip && user.id === trip.owner_id);
 
   const totalAmount = expenses.reduce(
     (sum, e) => sum + Number(e.amount || 0),
@@ -851,7 +851,7 @@ export default function TripDetailPage() {
           user={user}
           from={from}
           to={to}
-          isOwner={isOwner}
+          isOwner={!!isOwner}
           onScrollToStats={handleScrollToStats}
         />
 
