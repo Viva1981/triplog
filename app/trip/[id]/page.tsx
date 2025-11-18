@@ -4,6 +4,7 @@ import { useEffect, useState, FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import TripHeader from "./TripHeader";
 
 type User = {
   id: string;
@@ -844,65 +845,16 @@ export default function TripDetailPage() {
           </Link>
         </div>
 
-        {/* Fő info kártya */}
-        <section className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-slate-100">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold mb-1">{trip.title}</h1>
-              <p className="text-sm text-slate-600 mb-1">
-                {trip.destination || "Nincs megadott desztináció"}
-              </p>
-              {(from || to) && (
-                <p className="text-xs text-slate-500">
-                  {from && to
-                    ? `${from} – ${to}`
-                    : from
-                    ? `Kezdés: ${from}`
-                    : `Befejezés: ${to}`}
-                </p>
-              )}
-            </div>
+                {/* Fő info kártya */}
+        <TripHeader
+          trip={trip}
+          user={user}
+          from={from}
+          to={to}
+          isOwner={isOwner}
+          onScrollToStats={handleScrollToStats}
+        />
 
-            <div className="flex flex-col items-start md:items-end gap-3 w-full md:w-auto">
-              <div className="flex flex-col items-start md:items-end gap-1">
-                {isOwner && (
-                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#16ba53]/10 text-[#16ba53] text-xs font-semibold">
-                    Te vagy az utazás tulajdonosa
-                  </span>
-                )}
-                {user?.email && (
-                  <div className="text-right text-[11px] text-slate-500">
-                    <p className="font-semibold">Bejelentkezve:</p>
-                    <p>{user.email}</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-2 justify-end w-full">
-                <Link
-                  href={`/trip/${trip.id}/invite`}
-                  className="px-3 py-1.5 rounded-full border border-[#16ba53]/60 text-xs font-medium text-[#16ba53] hover:bg-[#16ba53]/5 transition"
-                >
-                  Meghívó link
-                </Link>
-                <button
-                  type="button"
-                  disabled
-                  className="px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 text-xs font-medium text-slate-400 cursor-not-allowed"
-                >
-                  TripTerv (hamarosan)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleScrollToStats}
-                  className="px-3 py-1.5 rounded-full bg-[#16ba53] text-white text-xs font-medium hover:opacity-90 transition"
-                >
-                  Statisztika
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
 
         {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
         <section className="grid gap-4 md:grid-cols-2 mb-4">
