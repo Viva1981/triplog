@@ -6,10 +6,15 @@ import type { TripExpense, TripMember } from "../../../lib/trip/types";
 
 type ExpensesSectionProps = {
   tripId: string;
-  currentUserId: string | null;
+  userId: string | null; // kívülről így jön, belül currentUserId-ként használjuk
 };
 
-type PaymentMethodOption = "Készpénz" | "Kártya" | "Online fizetés" | "Utalvány" | "Egyéb";
+type PaymentMethodOption =
+  | "Készpénz"
+  | "Kártya"
+  | "Online fizetés"
+  | "Utalvány"
+  | "Egyéb";
 
 const PAYMENT_METHODS: PaymentMethodOption[] = [
   "Készpénz",
@@ -40,7 +45,10 @@ function formatDateDisplay(dateStr: string): string {
   }
 }
 
-export default function ExpensesSection({ tripId, currentUserId }: ExpensesSectionProps) {
+export default function ExpensesSection({
+  tripId,
+  userId: currentUserId,
+}: ExpensesSectionProps) {
   const [expenses, setExpenses] = useState<TripExpense[]>([]);
   const [members, setMembers] = useState<TripMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +60,8 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
   const [note, setNote] = useState("");
   const [amount, setAmount] = useState<string>("");
   const [currency, setCurrency] = useState<string>("EUR");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodOption>("Készpénz");
+  const [paymentMethod, setPaymentMethod] =
+    useState<PaymentMethodOption>("Készpénz");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
@@ -91,7 +100,9 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
           if (last.currency) setCurrency(last.currency.toUpperCase());
           if (
             last.payment_method &&
-            PAYMENT_METHODS.includes(last.payment_method as PaymentMethodOption)
+            PAYMENT_METHODS.includes(
+              last.payment_method as PaymentMethodOption
+            )
           ) {
             setPaymentMethod(last.payment_method as PaymentMethodOption);
           }
@@ -100,7 +111,9 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
         // útitársak (accepted tagok)
         const { data: memberData, error: memberError } = await supabase
           .from("trip_members")
-          .select("id, trip_id, user_id, role, status, display_name, email")
+          .select(
+            "id, trip_id, user_id, role, status, display_name, email"
+          )
           .eq("trip_id", tripId)
           .eq("status", "accepted");
 
@@ -112,7 +125,10 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
         }
       } catch (e: any) {
         console.error(e);
-        setError(e?.message ?? "Ismeretlen hiba történt a költségek betöltésekor.");
+        setError(
+          e?.message ??
+            "Ismeretlen hiba történt a költségek betöltésekor."
+        );
       } finally {
         setLoading(false);
       }
@@ -162,7 +178,9 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUserId) {
-      setFormError("Költséget csak bejelentkezett felhasználó tud rögzíteni.");
+      setFormError(
+        "Költséget csak bejelentkezett felhasználó tud rögzíteni."
+      );
       return;
     }
 
@@ -200,7 +218,9 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
 
       if (error || !data) {
         console.error("EXPENSE INSERT ERROR:", error);
-        throw new Error(error?.message ?? "Nem sikerült rögzíteni a költséget.");
+        throw new Error(
+          error?.message ?? "Nem sikerült rögzíteni a költséget."
+        );
       }
 
       const mapped: TripExpense = {
@@ -216,7 +236,9 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
       // currency / payment method marad, hogy gyors legyen a következő rögzítés
     } catch (err: any) {
       console.error(err);
-      setFormError(err?.message ?? "Ismeretlen hiba történt rögzítés közben.");
+      setFormError(
+        err?.message ?? "Ismeretlen hiba történt rögzítés közben."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -226,8 +248,8 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
     <section className="bg-white rounded-2xl shadow-md p-4 md:p-5 border border-slate-100">
       <h2 className="text-lg font-semibold text-slate-900 mb-1">Költségek</h2>
       <p className="text-xs text-slate-500 mb-4">
-        Itt tudod rögzíteni, hogy ki mit fizetett az utazás során. Később ezekből számoljuk a
-        statisztikákat.
+        Itt tudod rögzíteni, hogy ki mit fizetett az utazás során. Később
+        ezekből számoljuk a statisztikákat.
       </p>
 
       {/* űrlap */}
@@ -384,7 +406,8 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
                   {exp.category ? `– ${exp.category}` : ""}
                 </span>
                 <span className="font-semibold">
-                  {exp.amount.toFixed(2)} {(exp.currency || "EUR").toUpperCase()}
+                  {exp.amount.toFixed(2)}{" "}
+                  {(exp.currency || "EUR").toUpperCase()}
                 </span>
               </div>
               <div className="text-[10px] text-slate-500 space-y-0.5">
@@ -406,6 +429,12 @@ export default function ExpensesSection({ tripId, currentUserId }: ExpensesSecti
             ))}
           </div>
         </div>
+      )}
+
+      {error && (
+        <p className="mt-2 text-[11px] text-red-600">
+          {error}
+        </p>
       )}
     </section>
   );
