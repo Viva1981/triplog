@@ -627,10 +627,13 @@ const handleScrollToExpenses = () => {
             initialNotes={trip.notes ?? null}
           />
 
-          <ExpensesSection
-            tripId={trip.id}
-            userId={user?.id ?? null}
-          />
+          {/* IDE kerül az anchor, amire a TripHeader gomb scrolloz */}
+          <div id="expenses-section">
+            <ExpensesSection
+              tripId={trip.id}
+              userId={user?.id ?? null}
+            />
+          </div>
         </section>
       </div>
     </main>
