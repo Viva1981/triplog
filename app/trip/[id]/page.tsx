@@ -482,6 +482,17 @@ export default function TripDetailPage() {
       }
     }
   };
+  const handleScrollToExpenses = () => {
+  const el = document.getElementById("expenses-section");
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth" });
+
+    const input = el.querySelector("input[name='category']");
+    if (input) {
+      setTimeout(() => input.focus(), 400);
+    }
+  }
+};
 
   const handleRenameFile = async (file: TripFile) => {
     const newName = prompt("Új név:", file.name);
@@ -574,14 +585,14 @@ export default function TripDetailPage() {
         </div>
 
         {/* Fő info kártya */}
-        <TripHeader
-          trip={trip}
-          user={user}
-          from={from}
-          to={to}
-          isOwner={!!isOwner}
-        />
-
+<TripHeader
+  trip={trip}
+  user={user}
+  from={from}
+  to={to}
+  isOwner={!!isOwner}
+  onScrollToExpenses={handleScrollToExpenses}
+/>
         {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
         <section className="grid gap-4 md:grid-cols-2 mb-4">
           <PhotosSection
