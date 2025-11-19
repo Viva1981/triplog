@@ -10,6 +10,7 @@ import TripStatsView from "./TripStatsView";
 type User = {
   id: string;
   email?: string;
+  displayName?: string;
 };
 
 export default function TripStatsPage() {
@@ -37,7 +38,18 @@ export default function TripStatsPage() {
         return;
       }
 
-      setUser({ id: user.id, email: user.email ?? undefined });
+      const metadata = (user.user_metadata || {}) as any;
+      const displayName =
+        metadata.full_name ||
+        metadata.name ||
+        metadata.preferred_username ||
+        undefined;
+
+      setUser({
+        id: user.id,
+        email: user.email ?? undefined,
+        displayName,
+      });
       setLoadingUser(false);
     };
 
@@ -130,8 +142,9 @@ export default function TripStatsPage() {
             Költségek statisztika
           </h1>
           <p className="text-xs md:text-sm text-slate-500 mb-2">
-            Egyszerű összefoglaló arról, hogy mire mennyi ment el ezen az
-            utazáson – teljes időtartamra vagy egy kiválasztott napra bontva.
+            Egyszerű összefoglaló arról, hogy mire mennyi ment el az utazáson –
+            minden ehhez az utazáshoz rögzített költségre, vagy egy
+            kiválasztott napra bontva.
           </p>
           <p className="text-xs md:text-sm text-slate-500">
             <span className="font-medium text-slate-700">{trip.title}</span>{" "}
@@ -152,7 +165,11 @@ export default function TripStatsPage() {
         </section>
 
         {/* Statisztika nézet */}
-        <TripStatsView trip={trip} currentUserId={user.id} />
+        <TripStatsView
+          trip={trip}
+          currentUserId={user.id}
+          currentUserDisplayName={user.displayName ?? user.email ?? null}
+        />
       </div>
     </main>
   );
