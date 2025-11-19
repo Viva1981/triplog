@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
-import type { Trip, TripExpense } from "../../../lib/trip/types";
+import type { Trip, TripExpense, TripMember } from "../../../lib/trip/types";
 
 type User = {
   id: string;
@@ -138,7 +138,7 @@ export default function TripHeader({
 
         if (membersError) {
           console.error("Error loading members count", membersError);
-          setStatsError("Nem sikerült betölteni az utazók számát.");
+          setStatsError("Nem sikerült betölteni az útitársak számát.");
         } else if (members) {
           setMembersCount(members.length);
         }
@@ -180,6 +180,11 @@ export default function TripHeader({
     durationDays !== null ||
     membersCount !== null ||
     Object.keys(totalsByCurrency).length > 0;
+
+  const formatMembersBadge = (count: number) => {
+    if (count === 1) return "1 útitárs";
+    return `${count} útitárs`;
+  };
 
   return (
     <div className="bg-white rounded-2xl shadow-md p-4 md:p-5 border border-slate-100 mb-4">
@@ -242,7 +247,7 @@ export default function TripHeader({
 
               {membersCount !== null && (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-slate-50 text-[10px] md:text-[11px] text-slate-700">
-                  {membersCount} utazó
+                  {formatMembersBadge(membersCount)}
                 </span>
               )}
 

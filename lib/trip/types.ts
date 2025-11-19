@@ -9,26 +9,37 @@ export type Trip = {
   drive_folder_id: string | null;
 };
 
-export type TripFileType = "photo" | "document";
-
 export type TripFile = {
   id: string;
-  type: TripFileType;
-  name: string;
+  trip_id?: string;
+  user_id?: string;
+  type: "photo" | "document";
   drive_file_id: string;
-  thumbnail_link: string | null;
-  preview_link: string | null;
+  name: string;
+  mime_type?: string | null;
+  thumbnail_link?: string | null;
+  preview_link?: string | null;
 };
 
 export type TripExpense = {
   id: string;
   trip_id: string;
-  user_id: string;
+  user_id: string | null;
   date: string;
   category: string | null;
-  note: string | null;
+  note?: string | null;
   amount: number;
-  currency: string;
+  currency: string | null;
   payment_method: string | null;
-  created_at: string;
+  created_at?: string;
+};
+
+export type TripMember = {
+  id: string;
+  trip_id: string;
+  user_id: string;
+  role: "owner" | "member";
+  status: "pending" | "accepted";
+  display_name: string | null;
+  email: string | null;
 };
