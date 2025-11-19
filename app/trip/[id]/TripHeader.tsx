@@ -1,301 +1,190 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
-import { supabase } from "../../../lib/supabaseClient";
-import type { Trip, TripExpense, TripMember } from "../../../lib/trip/types";
+import { format } from "date-fns";
+import hu from "date-fns/locale/hu";
 
-type User = {
-  id: string;
-  email?: string;
-};
+import { TripInfo, TripMemberInfo } from "@/lib/trip/types";
 
 type TripHeaderProps = {
-  trip: Trip;
-  user: User | null;
-  from: string;
-  to: string;
+  trip: TripInfo;
+  members: TripMemberInfo[];
+  userEmail: string | null;
+  userName: string | null;
+  userInitials: string;
+  totalByCurrency: { [currency: string]: number };
+  onScrollToExpenses: () => void;
   isOwner: boolean;
 };
 
-type TripStatus =
-  | { key: "upcoming"; label: "Közelgő utazás"; color: string }
-  | { key: "ongoing"; label: "Most zajlik"; color: string }
-  | { key: "finished"; label: "Lezárult utazás"; color: string }
-  | { key: "unknown"; label: "Ismeretlen státusz"; color: string };
-
-function computeTripStatus(trip: Trip): TripStatus {
-  if (!trip.date_from && !trip.date_to) {
-    return {
-      key: "unknown",
-      label: "Ismeretlen státusz",
-      color: "bg-slate-100 text-slate-600",
-    };
-  }
-
-  const today = new Date();
-  const todayDate = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
+// ---- Badge helper ----
+function Badge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-block px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm font-medium mr-2 mb-2">
+      {children}
+    </span>
   );
-
-  let start: Date | null = null;
-  let end: Date | null = null;
-
-  if (trip.date_from) {
-    const d = new Date(trip.date_from);
-    start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  }
-  if (trip.date_to) {
-    const d = new Date(trip.date_to);
-    end = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  }
-
-  if (start && todayDate < start) {
-    return {
-      key: "upcoming",
-      label: "Közelgő utazás",
-      color: "bg-sky-50 text-sky-700",
-    };
-  }
-
-  if (end && todayDate > end) {
-    return {
-      key: "finished",
-      label: "Lezárult utazás",
-      color: "bg-slate-100 text-slate-700",
-    };
-  }
-
-  if ((start && todayDate >= start) || (end && todayDate <= end)) {
-    return {
-      key: "ongoing",
-      label: "Most zajlik",
-      color: "bg-emerald-50 text-emerald-700",
-    };
-  }
-
-  return {
-    key: "unknown",
-    label: "Ismeretlen státusz",
-    color: "bg-slate-100 text-slate-600",
-  };
-}
-
-function computeDurationDays(trip: Trip): number | null {
-  if (!trip.date_from || !trip.date_to) return null;
-  try {
-    const start = new Date(trip.date_from);
-    const end = new Date(trip.date_to);
-    const startDate = new Date(
-      start.getFullYear(),
-      start.getMonth(),
-      start.getDate()
-    );
-    const endDate = new Date(
-      end.getFullYear(),
-      end.getMonth(),
-      end.getDate()
-    );
-    const diffMs = endDate.getTime() - startDate.getTime();
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    return diffDays >= 0 ? diffDays + 1 : null; // inkluzív
-  } catch {
-    return null;
-  }
 }
 
 export default function TripHeader({
   trip,
-  user,
-  from,
-  to,
+  members,
+  userEmail,
+  userName,
+  userInitials,
+  totalByCurrency,
   isOwner,
+  onScrollToExpenses,
 }: TripHeaderProps) {
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [membersCount, setMembersCount] = useState<number | null>(null);
-  const [totalsByCurrency, setTotalsByCurrency] = useState<
-    Record<string, number>
-  >({});
-  const [statsError, setStatsError] = useState<string | null>(null);
+  const memberCount = members.length;
 
-  const status = computeTripStatus(trip);
-  const durationDays = computeDurationDays(trip);
+  // --- Trip status ---
+  const statusLabel = useMemo(() => {
+    const today = new Date();
+    const from = trip.date_from ? new Date(trip.date_from) : null;
+    const to = trip.date_to ? new Date(trip.date_to) : null;
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      setLoadingStats(true);
-      setStatsError(null);
+    if (from && to) {
+      if (today < from) return { label: "Közelgő utazás", color: "bg-blue-100 text-blue-700" };
+      if (today >= from && today <= to) return { label: "Most zajlik", color: "bg-emerald-100 text-emerald-700" };
+      if (today > to) return { label: "Lezárult utazás", color: "bg-slate-200 text-slate-700" };
+    }
+    return null;
+  }, [trip.date_from, trip.date_to]);
 
-      try {
-        // Utazók száma (accepted tagok)
-        const { data: members, error: membersError } = await supabase
-          .from("trip_members")
-          .select("id")
-          .eq("trip_id", trip.id)
-          .eq("status", "accepted");
+  // --- Duration ---
+  const durationDays = useMemo(() => {
+    if (!trip.date_from || !trip.date_to) return null;
+    const start = new Date(trip.date_from);
+    const end = new Date(trip.date_to);
+    const diff = Math.round(Math.abs(+end - +start) / (1000 * 60 * 60 * 24));
+    return diff + 1;
+  }, [trip.date_from, trip.date_to]);
 
-        if (membersError) {
-          console.error("Error loading members count", membersError);
-          setStatsError("Nem sikerült betölteni az útitársak számát.");
-        } else if (members) {
-          setMembersCount(members.length);
-        }
-
-        // Költségek összesítése
-        const { data: expenses, error: expensesError } = await supabase
-          .from("trip_expenses")
-          .select("amount, currency")
-          .eq("trip_id", trip.id);
-
-        if (expensesError) {
-          console.error("Error loading expenses for header", expensesError);
-          if (!statsError) {
-            setStatsError("Nem sikerült betölteni a költség összefoglalót.");
-          }
-        } else if (expenses) {
-          const totals = (expenses as TripExpense[]).reduce<
-            Record<string, number>
-          >((acc, exp) => {
-            const cur = exp.currency || "EUR";
-            const amt = Number(exp.amount) || 0;
-            acc[cur] = (acc[cur] || 0) + amt;
-            return acc;
-          }, {});
-          setTotalsByCurrency(totals);
-        }
-      } catch (e) {
-        console.error(e);
-        setStatsError("Váratlan hiba történt a statisztikák betöltésekor.");
-      } finally {
-        setLoadingStats(false);
-      }
-    };
-
-    fetchStats();
-  }, [trip.id]);
-
-  const hasAnyStats =
-    durationDays !== null ||
-    membersCount !== null ||
-    Object.keys(totalsByCurrency).length > 0;
-
-  const formatMembersBadge = (count: number) => {
-    if (count === 1) return "1 útitárs";
-    return `${count} útitárs`;
-  };
+  // --- Member list tooltip text ---
+  const memberNames = useMemo(() => {
+    return members
+      .map((m) => {
+        if (m.is_current_user) return `${m.display_name ?? m.email} (te)`;
+        return m.display_name ?? m.email ?? "Ismeretlen utazó";
+      })
+      .join(", ");
+  }, [members]);
 
   return (
-    <div className="bg-white rounded-2xl shadow-md p-4 md:p-5 border border-slate-100 mb-4">
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-        {/* Bal oldal: cím, desztináció, dátum + státusz */}
-        <div className="flex-1">
-          <h1 className="text-2xl md:text-3xl font-semibold text-slate-900 mb-1">
-            {trip.title}
-          </h1>
+    <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 mb-6">
+      {/* TITLE & META */}
+      <div className="flex flex-col md:flex-row md:justify-between gap-6">
+
+        {/* LEFT SIDE */}
+        <div>
+          <h1 className="text-3xl font-bold mb-1">{trip.title}</h1>
           {trip.destination && (
-            <p className="text-sm md:text-base text-slate-600 mb-1">
-              {trip.destination}
-            </p>
+            <p className="text-slate-600 text-lg mb-1">{trip.destination}</p>
           )}
-          {(from || to) && (
-            <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm text-slate-500">
-              <span>
-                {from} {from && to && "–"} {to}
+
+          {/* Dates + status */}
+          <div className="flex items-center gap-3 flex-wrap">
+
+            {trip.date_from && trip.date_to && (
+              <span className="text-slate-700">
+                {format(new Date(trip.date_from), "yyyy. MM. dd.", { locale: hu })} –{" "}
+                {format(new Date(trip.date_to), "yyyy. MM. dd.", { locale: hu })}
               </span>
-              {status.key !== "unknown" && (
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] md:text-xs font-medium ${status.color}`}
-                >
-                  {status.label}
-                </span>
-              )}
+            )}
+
+            {statusLabel && (
+              <span
+                className={`px-3 py-1 rounded-full text-sm font-medium ${statusLabel.color}`}
+              >
+                {statusLabel.label}
+              </span>
+            )}
+          </div>
+
+          {/* OWNER BADGE */}
+          {isOwner && (
+            <div className="mt-3 inline-block px-4 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
+              Te vagy az utazás tulajdonosa
             </div>
           )}
         </div>
 
-        {/* Jobb oldal: owner badge, user, quick stats */}
-        <div className="flex flex-col items-start md:items-end gap-2 min-w-[190px]">
-          {isOwner && (
-            <span className="inline-flex items-center px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
-              Te vagy az utazás tulajdonosa
-            </span>
-          )}
-
-          {user && user.email && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-              <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[11px] font-semibold text-slate-600">
-                {user.email.charAt(0).toUpperCase()}
-              </div>
-              <div className="flex flex-col leading-tight">
-                <span className="text-[10px] uppercase tracking-wide text-slate-400">
-                  Bejelentkezve
-                </span>
-                <span className="text-[11px]">{user.email}</span>
-              </div>
-            </div>
-          )}
-
-          {hasAnyStats && (
-            <div className="flex flex-wrap md:justify-end gap-1.5 mt-1">
-              {durationDays !== null && (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-slate-50 text-[10px] md:text-[11px] text-slate-700">
-                  {durationDays} napos utazás
-                </span>
-              )}
-
-              {membersCount !== null && (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-slate-50 text-[10px] md:text-[11px] text-slate-700">
-                  {formatMembersBadge(membersCount)}
-                </span>
-              )}
-
-              {Object.keys(totalsByCurrency).map((cur) => (
-                <span
-                  key={cur}
-                  className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-slate-50 text-[10px] md:text-[11px] text-slate-700"
-                >
-                  Összes költés:{" "}
-                  <span className="font-semibold ml-1">
-                    {totalsByCurrency[cur].toFixed(2)} {cur}
-                  </span>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {statsError && (
-            <p className="text-[10px] text-red-500 max-w-xs text-right">
-              {statsError}
+        {/* RIGHT SIDE – USER INFO */}
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 bg-slate-200 rounded-full flex items-center justify-center text-slate-700 font-semibold text-lg">
+            {userInitials}
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">
+              Bejelentkezve
             </p>
-          )}
+            <p className="text-sm text-slate-700 font-medium">
+              {userName ?? userEmail}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Gombsor */}
-      <div className="mt-4 flex flex-wrap gap-2">
+      {/* QUICK STATS */}
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+
+        {/* Duration */}
+        {durationDays && <Badge>{durationDays} napos utazás</Badge>}
+
+        {/* Members */}
+        {memberCount > 1 && (
+          <div className="relative group">
+            <Badge>Résztvevők: {memberCount} fő</Badge>
+            {/* Tooltip */}
+            <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-white border border-slate-200 shadow-lg rounded-lg p-3 text-sm text-slate-700 z-20 w-max max-w-xs">
+              {memberNames}
+            </div>
+          </div>
+        )}
+
+        {/* COSTS BY CURRENCY */}
+        {Object.entries(totalByCurrency).map(([currency, amount]) => (
+          <Badge key={currency}>
+            {currency} összesen:{" "}
+            {amount.toLocaleString("hu-HU", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </Badge>
+        ))}
+      </div>
+
+      {/* ACTION BUTTONS */}
+      <div className="mt-6 flex flex-wrap gap-3">
         <Link
           href={`/trip/${trip.id}/invite`}
-          className="inline-flex items-center justify-center px-4 py-1.5 rounded-full border border-emerald-500 text-emerald-600 text-xs font-medium hover:bg-emerald-50 transition"
+          className="px-5 py-2 rounded-full border border-emerald-500 text-emerald-600 font-medium hover:bg-emerald-50 transition"
         >
           Meghívó link
         </Link>
 
         <button
-          type="button"
           disabled
-          className="inline-flex items-center justify-center px-4 py-1.5 rounded-full border border-slate-200 text-xs font-medium text-slate-400 bg-slate-50 cursor-not-allowed"
+          className="px-5 py-2 rounded-full bg-slate-100 text-slate-500 font-medium cursor-not-allowed"
         >
           TripTerv (hamarosan)
         </button>
 
         <Link
           href={`/trip/${trip.id}/stats`}
-          className="inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-[#16ba53] text-white text-xs font-medium hover:opacity-90 transition"
+          className="px-5 py-2 rounded-full bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition"
         >
           Statisztika
         </Link>
+
+        <button
+          onClick={onScrollToExpenses}
+          className="px-5 py-2 rounded-full border border-slate-400 text-slate-700 font-medium hover:bg-slate-50 transition"
+        >
+          Költség hozzáadása
+        </button>
       </div>
     </div>
   );
