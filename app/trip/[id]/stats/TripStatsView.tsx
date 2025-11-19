@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../../lib/supabaseClient";
-import type { Trip, TripExpense } from "../../../../lib/trip/types";
+import type { Trip, TripExpense, TripMember } from "../../../../lib/trip/types";
 
 type TripStatsViewProps = {
   trip: Trip;
@@ -56,6 +56,7 @@ export default function TripStatsView({
   currentUserDisplayName,
 }: TripStatsViewProps) {
   const [expenses, setExpenses] = useState<TripExpense[]>([]);
+  const [members, setMembers] = useState<TripMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,48 +65,63 @@ export default function TripStatsView({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchExpenses = async () => {
+    const fetchData = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        const { data, error } = await supabase
-          .from("trip_expenses")
-          .select(
-            "id, trip_id, user_id, date, category, amount, currency, payment_method"
-          )
-          .eq("trip_id", trip.id)
-          .order("date", { ascending: true });
+        const [{ data: expData, error: expError }, { data: memberData, error: memberError }] =
+          await Promise.all([
+            supabase
+              .from("trip_expenses")
+              .select(
+                "id, trip_id, user_id, date, category, note, amount, currency, payment_method"
+              )
+              .eq("trip_id", trip.id)
+              .order("date", { ascending: true }),
+            supabase
+              .from("trip_members")
+              .select("id, trip_id, user_id, role, status, display_name, email")
+              .eq("trip_id", trip.id)
+              .eq("status", "accepted"),
+          ]);
 
-        if (error) {
-          console.error("Error loading expenses for stats page", error);
-          setError("Hiba történt a statisztikák betöltésekor.");
-        } else if (data) {
-          const mapped = (data as any[]).map((e) => ({
-            ...e,
-            amount: Number(e.amount),
-          })) as TripExpense[];
-          setExpenses(mapped);
+        if (expError) {
+          console.error("Error loading expenses for stats page", expError);
+          throw new Error("Hiba történt a statisztikák betöltésekor.");
+        }
 
-          if (!selectedDate) {
-            if (mapped.length > 0) {
-              setSelectedDate(mapped[mapped.length - 1].date); // legutóbbi nap
-            } else if (trip.date_from) {
-              setSelectedDate(trip.date_from);
-            } else {
-              setSelectedDate(todayIso());
-            }
+        const mapped = (expData || []).map((e: any) => ({
+          ...e,
+          amount: Number(e.amount),
+        })) as TripExpense[];
+        setExpenses(mapped);
+
+        if (!selectedDate) {
+          if (mapped.length > 0) {
+            setSelectedDate(mapped[mapped.length - 1].date);
+          } else if (trip.date_from) {
+            setSelectedDate(trip.date_from);
+          } else {
+            setSelectedDate(todayIso());
           }
         }
-      } catch (e) {
+
+        if (memberError) {
+          console.error("Error loading members for stats page", memberError);
+          // nem dobjuk fel, a stat ettől még működik, csak nevek helyett generikus "Útitárs" lesz
+        } else if (memberData) {
+          setMembers(memberData as TripMember[]);
+        }
+      } catch (e: any) {
         console.error(e);
-        setError("Váratlan hiba történt a statisztikák betöltésekor.");
+        setError(e?.message ?? "Váratlan hiba történt a statisztikák betöltésekor.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchExpenses();
+    fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip.id]);
 
@@ -119,7 +135,7 @@ export default function TripStatsView({
   const totalsByCurrency = useMemo(
     () =>
       filteredExpenses.reduce<Record<string, number>>((acc, exp) => {
-        const cur = exp.currency || "EUR";
+        const cur = (exp.currency || "EUR").toUpperCase();
         acc[cur] = (acc[cur] || 0) + (exp.amount || 0);
         return acc;
       }, {}),
@@ -135,7 +151,7 @@ export default function TripStatsView({
         exp.category && exp.category.trim() !== ""
           ? exp.category.trim()
           : "Egyéb";
-      const cur = exp.currency || "EUR";
+      const cur = (exp.currency || "EUR").toUpperCase();
       if (!map[key]) {
         map[key] = { amount: 0, currency: cur };
       }
@@ -151,7 +167,7 @@ export default function TripStatsView({
   const currencyRows = useMemo(() => {
     const map: Record<string, number> = {};
     for (const exp of filteredExpenses) {
-      const cur = exp.currency || "EUR";
+      const cur = (exp.currency || "EUR").toUpperCase();
       map[cur] = (map[cur] || 0) + (exp.amount || 0);
     }
     return Object.entries(map).map(([currency, amount]) => ({
@@ -163,9 +179,20 @@ export default function TripStatsView({
   const detailedUserRows: DetailedUserRow[] = useMemo(() => {
     const map = new Map<string, DetailedUserRow>();
 
+    const getMemberLabel = (userId: string): string => {
+      const member = members.find((m) => m.user_id === userId);
+      const base =
+        member?.display_name ||
+        member?.email ||
+        null;
+
+      if (!base) return "Útitárs";
+      return `Útitárs (${base})`;
+    };
+
     for (const exp of filteredExpenses) {
       const userId = exp.user_id ?? "unknown";
-      const cur = exp.currency || "EUR";
+      const cur = (exp.currency || "EUR").toUpperCase();
       const category =
         exp.category && exp.category.trim() !== ""
           ? exp.category.trim()
@@ -180,7 +207,7 @@ export default function TripStatsView({
           ? currentUserDisplayName
             ? `Te (${currentUserDisplayName})`
             : "Te"
-          : "Másik utazó";
+          : getMemberLabel(userId);
 
         map.set(userId, {
           userId,
@@ -189,11 +216,9 @@ export default function TripStatsView({
           categoriesByCurrency: { [cur]: { [category]: amount } },
         });
       } else {
-        // total by currency
         existing.totalsByCurrency[cur] =
           (existing.totalsByCurrency[cur] || 0) + amount;
 
-        // category by currency
         if (!existing.categoriesByCurrency[cur]) {
           existing.categoriesByCurrency[cur] = {};
         }
@@ -202,7 +227,6 @@ export default function TripStatsView({
       }
     }
 
-    // rendezés: aki a legtöbbet költötte, az legyen felül
     return Array.from(map.values()).sort((a, b) => {
       const totalA = Object.values(a.totalsByCurrency).reduce(
         (sum, v) => sum + v,
@@ -214,7 +238,7 @@ export default function TripStatsView({
       );
       return totalB - totalA;
     });
-  }, [filteredExpenses, currentUserId, currentUserDisplayName]);
+  }, [filteredExpenses, members, currentUserId, currentUserDisplayName]);
 
   const maxCategoryAmount =
     categoryRows.length > 0
@@ -397,8 +421,7 @@ export default function TripStatsView({
 
       {!hasAnyData ? (
         <p className="text-[11px] text-slate-500">
-          Még nincs rögzített költség ehhez az utazáshoz a kiválasztott
-          időszakban.
+          Még nincs rögzített költség ehhez az utazáshoz a kiválasztott időszakban.
         </p>
       ) : (
         <>
@@ -429,9 +452,8 @@ export default function TripStatsView({
                 </div>
               ))}
               <p className="mt-2 text-[10px] text-slate-400">
-                A kategóriák a rögzített költségek &quot;Kategória&quot;
-                mezője alapján számolódnak. Több pénznem esetén az
-                összegzések csak közelítő jellegűek.
+                A kategóriák a rögzített költségek &quot;Kategória&quot; mezője alapján
+                számolódnak. Több pénznem esetén az összegzések csak közelítő jellegűek.
               </p>
             </div>
           )}
@@ -463,9 +485,8 @@ export default function TripStatsView({
                 </div>
               ))}
               <p className="mt-2 text-[10px] text-slate-400">
-                Itt pénznemenként összesítjük a költéseket. A részletesebb
-                bontásért válaszd a &quot;Kategóriák&quot; vagy &quot;Részletes&quot;
-                nézetet.
+                Itt pénznemenként összesítjük a költéseket. A részletesebb bontásért válaszd a
+                &quot;Kategóriák&quot; vagy &quot;Részletes&quot; nézetet.
               </p>
             </div>
           )}
@@ -478,13 +499,8 @@ export default function TripStatsView({
                   0
                 );
 
-                const totalSummary = Object.entries(
-                  row.totalsByCurrency
-                )
-                  .map(
-                    ([cur, amt]) =>
-                      `${amt.toFixed(2)} ${cur}`
-                  )
+                const totalSummary = Object.entries(row.totalsByCurrency)
+                  .map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`)
                   .join(" + ");
 
                 return (
@@ -511,7 +527,6 @@ export default function TripStatsView({
                       />
                     </div>
 
-                    {/* kategória × pénznem bontás */}
                     <div className="space-y-1">
                       {Object.entries(row.categoriesByCurrency).map(
                         ([currency, cats]) => (
@@ -519,19 +534,17 @@ export default function TripStatsView({
                             <p className="text-[10px] font-medium text-slate-500 mb-0.5">
                               {currency}
                             </p>
-                            {Object.entries(cats).map(
-                              ([catName, amt]) => (
-                                <div
-                                  key={`${currency}-${catName}`}
-                                  className="flex items-center justify-between text-[10px]"
-                                >
-                                  <span>{catName}</span>
-                                  <span className="font-semibold">
-                                    {amt.toFixed(2)} {currency}
-                                  </span>
-                                </div>
-                              )
-                            )}
+                            {Object.entries(cats).map(([catName, amt]) => (
+                              <div
+                                key={`${currency}-${catName}`}
+                                className="flex items-center justify-between text-[10px]"
+                              >
+                                <span>{catName}</span>
+                                <span className="font-semibold">
+                                  {amt.toFixed(2)} {currency}
+                                </span>
+                              </div>
+                            ))}
                           </div>
                         )
                       )}
@@ -541,11 +554,9 @@ export default function TripStatsView({
               })}
 
               <p className="mt-2 text-[10px] text-slate-400">
-                Itt azt látod, ki mennyit költött kategóriánként és
-                pénznemenként. Jelenleg a saját neved a Google-fiókod neve
-                vagy e-mail címe, a többi utazó pedig &quot;Másik utazó&quot;
-                néven jelenik meg. Később ide kerül majd a részletes
-                elszámolás is (ki tartozik kinek).
+                Itt azt látod, ki mennyit költött kategóriánként és pénznemenként. A saját nevedet
+                a Google-fiókod neve vagy e-mail címe jelzi, az útitársak pedig &quot;Útitárs
+                (Név)&quot; formában jelennek meg.
               </p>
             </div>
           )}
@@ -564,9 +575,9 @@ export default function TripStatsView({
 
       {periodMode === "all" && (
         <p className="mt-4 text-[10px] text-slate-400">
-          Az &quot;Utazáshoz rögzítve&quot; nézet minden ehhez az utazáshoz
-          felvitt költést tartalmaz, függetlenül attól, hogy ténylegesen
-          mikor fizetted ki őket (pl. előre kifizetett szállás).
+          Az &quot;Utazáshoz rögzítve&quot; nézet minden ehhez az utazáshoz felvitt költést
+          tartalmaz, függetlenül attól, hogy ténylegesen mikor fizetted ki őket (pl. előre
+          kifizetett szállás).
         </p>
       )}
     </section>

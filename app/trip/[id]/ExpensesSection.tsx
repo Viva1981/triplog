@@ -1,32 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useState, FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
-import type { TripExpense } from "../../../lib/trip/types";
+import type { TripExpense, TripMember } from "../../../lib/trip/types";
 
 type ExpensesSectionProps = {
   tripId: string;
-  userId: string | null;
+  currentUserId: string | null;
 };
 
-const BASE_CATEGORIES = [
-  "Szállás",
-  "Éttermek",
-  "Bolt",
-  "Közlekedés",
-  "Program",
-  "Belépők",
-  "Parkolás",
-  "Egyéb",
-];
+type PaymentMethodOption = "Készpénz" | "Kártya" | "Online fizetés" | "Utalvány" | "Egyéb";
 
-const PAYMENT_METHOD_OPTIONS = [
-  "Kártya",
+const PAYMENT_METHODS: PaymentMethodOption[] = [
   "Készpénz",
+  "Kártya",
   "Online fizetés",
   "Utalvány",
   "Egyéb",
 ];
+
+function todayIso(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 function formatDateDisplay(dateStr: string): string {
   try {
@@ -41,393 +40,373 @@ function formatDateDisplay(dateStr: string): string {
   }
 }
 
-function todayIso(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-export default function ExpensesSection({ tripId, userId }: ExpensesSectionProps) {
+export default function ExpensesSection({ tripId, currentUserId }: ExpensesSectionProps) {
   const [expenses, setExpenses] = useState<TripExpense[]>([]);
-  const [loadingExpenses, setLoadingExpenses] = useState(true);
-  const [expenseError, setExpenseError] = useState<string | null>(null);
-  const [expenseSuccess, setExpenseSuccess] = useState<string | null>(null);
-  const [submittingExpense, setSubmittingExpense] = useState(false);
+  const [members, setMembers] = useState<TripMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // űrlap state
   const [date, setDate] = useState<string>(todayIso());
-  const [category, setCategory] = useState<string>("");
-  const [note, setNote] = useState<string>("");
+  const [category, setCategory] = useState("");
+  const [note, setNote] = useState("");
   const [amount, setAmount] = useState<string>("");
   const [currency, setCurrency] = useState<string>("EUR");
-  const [paymentMethod, setPaymentMethod] = useState<string>(PAYMENT_METHOD_OPTIONS[0]);
-
-  const [hasTouchedCurrency, setHasTouchedCurrency] = useState(false);
-  const [hasTouchedPaymentMethod, setHasTouchedPaymentMethod] = useState(false);
-  const [categoryFocused, setCategoryFocused] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodOption>("Készpénz");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchExpenses = async () => {
-      setLoadingExpenses(true);
-      setExpenseError(null);
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
 
       try {
-        const { data, error } = await supabase
+        // költségek
+        const { data: expData, error: expError } = await supabase
           .from("trip_expenses")
-          .select("*")
+          .select(
+            "id, trip_id, user_id, date, category, note, amount, currency, payment_method, created_at"
+          )
           .eq("trip_id", tripId)
-          .order("date", { ascending: true });
+          .order("date", { ascending: false })
+          .order("created_at", { ascending: false });
 
-        if (error) {
-          console.error("Error loading expenses", error);
-          setExpenseError("Hiba történt a költségek betöltésekor.");
-        } else if (data) {
-          const mapped = (data as any[]).map((e) => ({
-            ...e,
-            amount: Number(e.amount),
-          })) as TripExpense[];
-          setExpenses(mapped);
+        if (expError) {
+          console.error("EXPENSES FETCH ERROR:", expError);
+          throw new Error("Nem sikerült betölteni a költségeket.");
+        }
 
-          // currency default: utoljára használt
-          if (!hasTouchedCurrency && mapped.length > 0) {
-            const last = mapped[mapped.length - 1];
-            if (last.currency) {
-              setCurrency(String(last.currency).toUpperCase());
-            }
-          }
+        const mapped = (expData || []).map((e: any) => ({
+          ...e,
+          amount: Number(e.amount),
+        })) as TripExpense[];
 
-          // fizetési mód default: utolsó nem-null érték
-          if (!hasTouchedPaymentMethod && mapped.length > 0) {
-            const lastWithPayment = [...mapped]
-              .reverse()
-              .find((e) => e.payment_method && e.payment_method.trim() !== "");
-            if (lastWithPayment?.payment_method) {
-              setPaymentMethod(lastWithPayment.payment_method);
-            }
+        setExpenses(mapped);
+
+        // last-used currency + payment method
+        if (mapped.length > 0) {
+          const last = mapped[0];
+          if (last.currency) setCurrency(last.currency.toUpperCase());
+          if (
+            last.payment_method &&
+            PAYMENT_METHODS.includes(last.payment_method as PaymentMethodOption)
+          ) {
+            setPaymentMethod(last.payment_method as PaymentMethodOption);
           }
         }
-      } catch (e) {
+
+        // útitársak (accepted tagok)
+        const { data: memberData, error: memberError } = await supabase
+          .from("trip_members")
+          .select("id, trip_id, user_id, role, status, display_name, email")
+          .eq("trip_id", tripId)
+          .eq("status", "accepted");
+
+        if (memberError) {
+          console.error("TRIP_MEMBERS FETCH ERROR:", memberError);
+          // nem dobjuk tovább, csak logoljuk – a költséglista attól még működjön
+        } else if (memberData) {
+          setMembers(memberData as TripMember[]);
+        }
+      } catch (e: any) {
         console.error(e);
-        setExpenseError("Váratlan hiba történt a költségek betöltésekor.");
+        setError(e?.message ?? "Ismeretlen hiba történt a költségek betöltésekor.");
       } finally {
-        setLoadingExpenses(false);
+        setLoading(false);
       }
     };
 
-    fetchExpenses();
-  }, [tripId, hasTouchedCurrency, hasTouchedPaymentMethod]);
+    fetchData();
+  }, [tripId]);
 
-  const knownCategories = useMemo(() => {
+  const categorySuggestions = useMemo(() => {
     const set = new Set<string>();
-    for (const c of BASE_CATEGORIES) {
-      set.add(c);
-    }
     for (const exp of expenses) {
       if (exp.category && exp.category.trim() !== "") {
         set.add(exp.category.trim());
       }
     }
-    return Array.from(set);
+    return Array.from(set).sort();
   }, [expenses]);
-
-  const categorySuggestions = useMemo(() => {
-    if (!categoryFocused || category.trim() === "") return [] as string[];
-
-    const query = category.trim().toLowerCase();
-    return knownCategories
-      .filter(
-        (c) =>
-          c.toLowerCase().startsWith(query) &&
-          c.toLowerCase() !== query
-      )
-      .slice(0, 6);
-  }, [category, categoryFocused, knownCategories]);
 
   const totalsByCurrency = useMemo(
     () =>
       expenses.reduce<Record<string, number>>((acc, exp) => {
-        const cur = exp.currency || "EUR";
-        acc[cur] = (acc[cur] || 0) + (exp.amount || 0);
+        const cur = (exp.currency || "EUR").toUpperCase();
+        const amt = Number(exp.amount) || 0;
+        acc[cur] = (acc[cur] || 0) + amt;
         return acc;
       }, {}),
     [expenses]
   );
 
-  const isTodaySelected = date === todayIso();
+  const isToday = date === todayIso();
 
-  const handleSubmit = async (e: FormEvent) => {
+  const getRecorderLabel = (exp: TripExpense): string => {
+    if (!exp.user_id) return "Rögzítette: Útitárs";
+    if (currentUserId && exp.user_id === currentUserId) {
+      return "Rögzítette: Te";
+    }
+
+    const member = members.find((m) => m.user_id === exp.user_id);
+    const name = member?.display_name || member?.email || null;
+
+    if (name) {
+      return `Rögzítette: Útitárs – ${name}`;
+    }
+    return "Rögzítette: Útitárs";
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setExpenseError(null);
-    setExpenseSuccess(null);
-
-    if (!userId) {
-      setExpenseError("A költség rögzítéséhez be kell jelentkezned.");
+    if (!currentUserId) {
+      setFormError("Költséget csak bejelentkezett felhasználó tud rögzíteni.");
       return;
     }
 
-    if (!date || !amount) {
-      setExpenseError("A dátum és az összeg kötelező mező.");
+    if (!amount || isNaN(Number(amount))) {
+      setFormError("Adj meg egy érvényes összeget.");
       return;
     }
 
-    const parsedAmount = Number(amount);
-    if (Number.isNaN(parsedAmount)) {
-      setExpenseError("Az összegnek számnak kell lennie.");
-      return;
-    }
-
-    setSubmittingExpense(true);
+    setFormError(null);
+    setFormSuccess(null);
+    setSubmitting(true);
 
     try {
+      const numericAmount = Number(amount);
+      const trimmedCategory = category.trim() || null;
+      const trimmedNote = note.trim() || null;
+      const cur = currency.trim().toUpperCase() || "EUR";
+
       const { data, error } = await supabase
         .from("trip_expenses")
-        .insert([
-          {
-            trip_id: tripId,
-            user_id: userId,
-            date,
-            category: category.trim() || null,
-            note: note.trim() || null,
-            amount: parsedAmount,
-            currency: (currency || "EUR").toUpperCase(),
-            payment_method: paymentMethod?.trim() || null,
-          },
-        ])
-        .select("*")
+        .insert({
+          trip_id: tripId,
+          user_id: currentUserId,
+          date,
+          category: trimmedCategory,
+          note: trimmedNote,
+          amount: numericAmount,
+          currency: cur,
+          payment_method: paymentMethod,
+        })
+        .select(
+          "id, trip_id, user_id, date, category, note, amount, currency, payment_method, created_at"
+        )
         .single();
 
-      if (error) {
-        console.error("Error inserting expense", error);
-        setExpenseError("Hiba történt a költség rögzítésekor.");
-      } else if (data) {
-        const mapped: TripExpense = {
-          ...(data as any),
-          amount: Number((data as any).amount),
-        };
-        setExpenses((prev) => [...prev, mapped]);
-        setExpenseSuccess("Költség sikeresen rögzítve.");
-        setCategory("");
-        setNote("");
-        setAmount("");
-        // dátum marad (legtöbbször több költség ugyanazon a napon)
-        setTimeout(() => setExpenseSuccess(null), 2500);
+      if (error || !data) {
+        console.error("EXPENSE INSERT ERROR:", error);
+        throw new Error(error?.message ?? "Nem sikerült rögzíteni a költséget.");
       }
-    } catch (e) {
-      console.error(e);
-      setExpenseError("Váratlan hiba történt a költség rögzítésekor.");
+
+      const mapped: TripExpense = {
+        ...data,
+        amount: Number(data.amount),
+      };
+
+      setExpenses((prev) => [mapped, ...prev]);
+      setFormSuccess("Költség rögzítve.");
+      setAmount("");
+      setNote("");
+
+      // currency / payment method marad, hogy gyors legyen a következő rögzítés
+    } catch (err: any) {
+      console.error(err);
+      setFormError(err?.message ?? "Ismeretlen hiba történt rögzítés közben.");
     } finally {
-      setSubmittingExpense(false);
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
-      <h2 className="text-sm font-semibold mb-1">Költségek</h2>
-      <p className="text-xs text-slate-500 mb-3">
-        Itt tudod rögzíteni, hogy ki mit fizetett az utazás során. Később ezekből
-        számoljuk a statisztikákat.
+    <section className="bg-white rounded-2xl shadow-md p-4 md:p-5 border border-slate-100">
+      <h2 className="text-lg font-semibold text-slate-900 mb-1">Költségek</h2>
+      <p className="text-xs text-slate-500 mb-4">
+        Itt tudod rögzíteni, hogy ki mit fizetett az utazás során. Később ezekből számoljuk a
+        statisztikákat.
       </p>
 
-      <form onSubmit={handleSubmit} className="space-y-2 mb-3">
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="block text-[11px] text-slate-600 mb-1">
+      {/* űrlap */}
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-3 bg-slate-50/60 rounded-2xl p-3 mb-4 text-xs"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[11px] font-medium text-slate-600 mb-1">
               Dátum
             </label>
             <div className="flex items-center gap-2">
               <input
                 type="date"
-                className="flex-1 text-xs border border-slate-200 rounded-xl px-2 py-1.5 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+                className="flex-1 rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] text-xs"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
               />
-              {isTodaySelected && (
-                <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+              {isToday && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-50 text-[10px] text-emerald-700">
                   Ma
                 </span>
               )}
             </div>
           </div>
-          <div className="flex-1 relative">
-            <label className="block text-[11px] text-slate-600 mb-1">
+
+          <div>
+            <label className="block text-[11px] font-medium text-slate-600 mb-1">
               Kategória
             </label>
-            <input
-              type="text"
-              className="w-full text-xs border border-slate-200 rounded-xl px-2 py-1.5 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
-              placeholder="Pl.: Étterem, Szállás"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              onFocus={() => setCategoryFocused(true)}
-              onBlur={() => {
-                // kis késleltetés, hogy klikkelhessünk a javaslatra
-                setTimeout(() => setCategoryFocused(false), 150);
-              }}
-            />
-            {categorySuggestions.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-sm max-h-32 overflow-y-auto">
-                {categorySuggestions.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    className="w-full text-left text-[11px] px-2 py-1 hover:bg-slate-50"
-                    onClick={() => {
-                      setCategory(suggestion);
-                      setCategoryFocused(false);
-                    }}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="relative">
+              <input
+                type="text"
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] text-xs"
+                placeholder="Pl.: Étterem, Szállás"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                list="category-suggestions"
+              />
+              {categorySuggestions.length > 0 && (
+                <datalist id="category-suggestions">
+                  {categorySuggestions.map((cat) => (
+                    <option key={cat} value={cat} />
+                  ))}
+                </datalist>
+              )}
+            </div>
           </div>
         </div>
 
         <div>
-          <label className="block text-[11px] text-slate-600 mb-1">
+          <label className="block text-[11px] font-medium text-slate-600 mb-1">
             Megjegyzés
           </label>
           <input
             type="text"
-            className="w-full text-xs border border-slate-200 rounded-xl px-2 py-1.5 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] text-xs"
             placeholder="Pl.: vacsora első este..."
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
         </div>
 
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="block text-[11px] text-slate-600 mb-1">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-[11px] font-medium text-slate-600 mb-1">
               Összeg *
             </label>
             <input
               type="number"
               step="0.01"
-              className="w-full text-xs border border-slate-200 rounded-xl px-2 py-1.5 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] text-xs"
+              placeholder="Pl.: 50"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
           </div>
-          <div className="w-24">
-            <label className="block text-[11px] text-slate-600 mb-1">
+
+          <div>
+            <label className="block text-[11px] font-medium text-slate-600 mb-1">
               Pénznem
             </label>
             <input
               type="text"
-              className="w-full text-xs border border-slate-200 rounded-xl px-2 py-1.5 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] text-xs uppercase"
               value={currency}
-              onChange={(e) => {
-                setHasTouchedCurrency(true);
-                setCurrency(e.target.value.toUpperCase());
-              }}
+              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
             />
           </div>
-          <div className="flex-1">
-            <label className="block text-[11px] text-slate-600 mb-1">
+
+          <div>
+            <label className="block text-[11px] font-medium text-slate-600 mb-1">
               Fizetési mód
             </label>
             <select
-              className="w-full text-xs border border-slate-200 rounded-xl px-2 py-1.5 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] bg-white"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] text-xs"
               value={paymentMethod}
-              onChange={(e) => {
-                setHasTouchedPaymentMethod(true);
-                setPaymentMethod(e.target.value);
-              }}
+              onChange={(e) =>
+                setPaymentMethod(e.target.value as PaymentMethodOption)
+              }
             >
-              {PAYMENT_METHOD_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
+              {PAYMENT_METHODS.map((pm) => (
+                <option key={pm} value={pm}>
+                  {pm}
                 </option>
               ))}
             </select>
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 pt-1">
+        {formError && (
+          <p className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+            {formError}
+          </p>
+        )}
+        {formSuccess && (
+          <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
+            {formSuccess}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between gap-2">
           <button
             type="submit"
-            disabled={submittingExpense}
-            className="px-3 py-1.5 rounded-xl bg-[#16ba53] text-white text-xs font-medium hover:opacity-90 transition disabled:opacity-60 w-full md:w-auto"
+            disabled={submitting}
+            className="inline-flex items-center justify-center px-5 py-2 rounded-full bg-[#16ba53] text-white text-xs font-medium hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            {submittingExpense ? "Mentés..." : "Költség rögzítése"}
+            {submitting ? "Rögzítés..." : "Költség rögzítése"}
           </button>
-
-          <span className="hidden md:inline text-[10px] text-slate-400">
+          <p className="text-[10px] text-slate-400">
             A statisztika ehhez a listához igazodik.
-          </span>
+          </p>
         </div>
       </form>
 
-      {expenseError && (
-        <div className="mt-1 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
-          {expenseError}
-        </div>
-      )}
-
-      {expenseSuccess && (
-        <div className="mt-1 text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
-          {expenseSuccess}
-        </div>
-      )}
-
-      <div className="mt-3 border-t border-slate-100 pt-2">
-        {loadingExpenses ? (
-          <p className="text-[11px] text-slate-500">Költségek betöltése...</p>
-        ) : expenses.length === 0 ? (
-          <p className="text-[11px] text-slate-500">
-            Még nincs rögzített költség ehhez az utazáshoz.
-          </p>
-        ) : (
-          <>
-            <ul className="space-y-1 max-h-40 overflow-y-auto pr-1">
-              {expenses.map((exp) => (
-                <li
-                  key={exp.id}
-                  className="text-[11px] flex items-start justify-between gap-2 border border-slate-100 rounded-xl px-2 py-1 bg-white"
-                >
-                  <div className="flex-1">
-                    <p className="font-medium">
-                      {formatDateDisplay(exp.date)}
-                      {exp.category ? ` – ${exp.category}` : ""}
-                    </p>
-                    {exp.note && (
-                      <p className="text-[10px] text-slate-600">{exp.note}</p>
-                    )}
-                    <p className="text-[10px] text-slate-500">
-                      Fizetési mód: {exp.payment_method || "n.a."}
-                    </p>
-                    <p className="text-[10px] text-slate-500">
-                      Rögzítette:{" "}
-                      {userId && exp.user_id === userId
-                        ? "Te"
-                        : "Másik utazó"}
-                    </p>
-                  </div>
-                  <div className="text-right whitespace-nowrap">
-                    <p className="font-semibold">
-                      {exp.amount.toFixed(2)} {exp.currency || "EUR"}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-
-            <div className="mt-2 text-[11px] text-slate-700">
-              {Object.keys(totalsByCurrency).map((cur) => (
-                <p key={cur}>
-                  Összesen:{" "}
-                  <span className="font-semibold">
-                    {totalsByCurrency[cur].toFixed(2)} {cur}
-                  </span>
-                </p>
-              ))}
+      {/* lista */}
+      {loading ? (
+        <p className="text-[11px] text-slate-500">Költségek betöltése...</p>
+      ) : expenses.length === 0 ? (
+        <p className="text-[11px] text-slate-500">
+          Még nincs rögzített költség ehhez az utazáshoz.
+        </p>
+      ) : (
+        <div className="bg-slate-50/60 rounded-2xl p-3 text-[11px] max-h-72 overflow-y-auto">
+          {expenses.map((exp) => (
+            <div
+              key={exp.id}
+              className="border border-slate-100 rounded-2xl px-3 py-2 mb-2 last:mb-0 bg-white"
+            >
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="font-medium">
+                  {formatDateDisplay(exp.date)}{" "}
+                  {exp.category ? `– ${exp.category}` : ""}
+                </span>
+                <span className="font-semibold">
+                  {exp.amount.toFixed(2)} {(exp.currency || "EUR").toUpperCase()}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-500 space-y-0.5">
+                {exp.note && <p>{exp.note}</p>}
+                <p>Fizetési mód: {exp.payment_method || "n.a."}</p>
+                <p>{getRecorderLabel(exp)}</p>
+              </div>
             </div>
-          </>
-        )}
-      </div>
-    </div>
+          ))}
+
+          <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-600 space-y-0.5">
+            {Object.entries(totalsByCurrency).map(([cur, amt]) => (
+              <p key={cur}>
+                Összesen:{" "}
+                <span className="font-semibold">
+                  {amt.toFixed(2)} {cur}
+                </span>
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
