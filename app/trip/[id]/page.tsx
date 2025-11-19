@@ -482,14 +482,17 @@ export default function TripDetailPage() {
       }
     }
   };
-  const handleScrollToExpenses = () => {
+
+const handleScrollToExpenses = () => {
   const el = document.getElementById("expenses-section");
   if (el) {
     el.scrollIntoView({ behavior: "smooth" });
 
     const input = el.querySelector("input[name='category']");
     if (input) {
-      setTimeout(() => input.focus(), 400);
+      setTimeout(() => {
+        (input as HTMLInputElement).focus();
+      }, 400);
     }
   }
 };
