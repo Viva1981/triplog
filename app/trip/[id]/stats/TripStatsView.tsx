@@ -55,10 +55,14 @@ function formatCurrency(amount: number, currency: string): string {
 
 function getMemberDisplayName(
   member: TripMember | undefined,
-  userId: string,
+  userId: string | null | undefined,
   currentUserId: string | null,
   currentUserDisplayName?: string | null
 ): string {
+  if (!userId) {
+    return "Útitárs";
+  }
+
   if (currentUserId && userId === currentUserId) {
     if (currentUserDisplayName && currentUserDisplayName.trim() !== "") {
       return `Te (${currentUserDisplayName})`;
