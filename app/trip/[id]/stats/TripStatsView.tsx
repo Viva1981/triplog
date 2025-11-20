@@ -1,8 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { format } from "date-fns";
-import hu from "date-fns/locale/hu";
 import { TripExpense, TripMemberInfo, TripInfo } from "@/lib/trip/types";
 
 interface Props {
