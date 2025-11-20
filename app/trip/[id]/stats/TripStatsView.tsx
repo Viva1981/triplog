@@ -292,28 +292,34 @@ export default function TripStatsView({ trip, expenses, members }: Props) {
             <div key={row.name}>
               <h3 className="font-semibold text-lg mb-1">{row.name}</h3>
 
-              {row.list
-                .reduce((acc, x) => {
-                  const key = `${x.currency}-${x.category}`;
-                  if (!acc[key]) acc[key] = { curr: x.currency, cat: x.category, amt: 0 };
-                  acc[key].amt += x.amount;
-                  return acc;
-                }, {} as any)
-                |> Object.values(#)
-                |> (# as { curr: string; cat: string; amt: number }[])
-                .map((x) => (
-                  <div key={x.cat + x.curr} className="mb-2">
-                    <div className="flex justify-between text-sm">
-                        <span>{x.cat} ({x.curr})</span>
-                        <span>
-                          {x.amt.toLocaleString("hu-HU", {
-                            minimumFractionDigits: 2,
-                          })}{" "}
-                          {x.curr}
-                        </span>
-                    </div>
-                  </div>
-                ))}
+{Object.values(
+  row.list.reduce((acc, x) => {
+    const key = `${x.currency}-${x.category}`;
+    if (!acc[key]) {
+      acc[key] = {
+        curr: x.currency,
+        cat: x.category,
+        amt: 0,
+      };
+    }
+    acc[key].amt += x.amount;
+    return acc;
+  }, {} as Record<string, { curr: string; cat: string; amt: number }>)
+).map((x) => (
+  <div key={x.cat + x.curr} className="mb-2">
+    <div className="flex justify-between text-sm">
+      <span>
+        {x.cat} ({x.curr})
+      </span>
+      <span>
+        {x.amt.toLocaleString("hu-HU", {
+          minimumFractionDigits: 2,
+        })}{" "}
+        {x.curr}
+      </span>
+    </div>
+  </div>
+))}
             </div>
           ))}
         </div>
