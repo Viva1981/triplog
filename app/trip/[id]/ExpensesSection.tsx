@@ -282,14 +282,15 @@ export default function ExpensesSection({
               Kategória
             </label>
             <div className="relative">
-              <input
-                type="text"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] text-xs"
-                placeholder="Pl.: Étterem, Szállás"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                list="category-suggestions"
-              />
+<input
+  type="text"
+  name="category"
+  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] text-xs"
+  placeholder="Pl.: Étterem, Szállás"
+  value={category}
+  onChange={(e) => setCategory(e.target.value)}
+  list="category-suggestions"
+/>
               {categorySuggestions.length > 0 && (
                 <datalist id="category-suggestions">
                   {categorySuggestions.map((cat) => (
