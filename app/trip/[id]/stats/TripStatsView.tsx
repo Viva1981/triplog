@@ -484,7 +484,7 @@ export default function TripStatsView({
             <button
               type="button"
               onClick={handlePrevDay}
-              disabled={!selectedDate || (minDate && selectedDate <= minDate)}
+              disabled={ !selectedDate || (!!minDate && !!selectedDate && selectedDate <= minDate)}
               className="px-2 py-1 rounded-full border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ◀
@@ -500,7 +500,7 @@ export default function TripStatsView({
             <button
               type="button"
               onClick={handleNextDay}
-              disabled={!selectedDate || (maxDate && selectedDate >= maxDate)}
+              disabled={ !selectedDate || (!!maxDate && !!selectedDate && selectedDate >= maxDate)}
               className="px-2 py-1 rounded-full border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ▶
