@@ -81,6 +81,9 @@ export default function ExpensesSection({
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // kebab menü állapot: melyik költséghez van nyitva a menü
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -126,8 +129,7 @@ export default function ExpensesSection({
       } catch (e: any) {
         console.error(e);
         setError(
-          e?.message ??
-            "Ismeretlen hiba történt a költségek betöltésekor."
+          e?.message ?? "Ismeretlen hiba történt a költségek betöltésekor."
         );
       } finally {
         setLoading(false);
@@ -180,6 +182,7 @@ export default function ExpensesSection({
   };
 
   const handleStartEdit = (exp: TripExpense) => {
+    setOpenMenuId(null);
     setEditError(null);
     setEditingId(exp.id);
     setEditDate(exp.date);
@@ -272,6 +275,8 @@ export default function ExpensesSection({
     );
     if (!confirmed) return;
 
+    setOpenMenuId(null);
+
     try {
       const { error } = await supabase
         .from("trip_expenses")
@@ -293,9 +298,7 @@ export default function ExpensesSection({
       }
     } catch (err: any) {
       console.error(err);
-      setError(
-        err?.message ?? "Ismeretlen hiba történt törlés közben."
-      );
+      setError(err?.message ?? "Ismeretlen hiba történt törlés közben.");
     }
   };
 
@@ -529,6 +532,8 @@ export default function ExpensesSection({
         <div className="bg-slate-50/60 rounded-2xl p-3 text-[11px] max-h-72 overflow-y-auto">
           {expenses.map((exp) => {
             const isEditing = editingId === exp.id;
+            const canModify =
+              !!currentUserId && exp.user_id === currentUserId;
 
             if (isEditing) {
               return (
@@ -665,25 +670,53 @@ export default function ExpensesSection({
                       {exp.category ? `– ${exp.category}` : ""}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <span className="font-semibold">
                       {exp.amount.toFixed(2)}{" "}
                       {(exp.currency || "EUR").toUpperCase()}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => handleStartEdit(exp)}
-                      className="text-[10px] text-slate-400 hover:text-slate-600"
-                    >
-                      Szerkesztés
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteExpense(exp.id)}
-                      className="text-[10px] text-red-400 hover:text-red-600"
-                    >
-                      Törlés
-                    </button>
+
+                    {canModify && (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenMenuId(
+                              openMenuId === exp.id ? null : exp.id
+                            )
+                          }
+                          className="px-1 py-0.5 rounded-full text-slate-400 hover:text-slate-700"
+                          aria-label="Költség műveletek"
+                        >
+                          ⋮
+                        </button>
+
+                        {openMenuId === exp.id && (
+                          <div className="absolute right-0 mt-1 w-28 bg-white border border-slate-200 rounded-xl shadow-lg z-10">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenMenuId(null);
+                                handleStartEdit(exp);
+                              }}
+                              className="block w-full text-left px-3 py-1.5 text-[10px] text-slate-700 hover:bg-slate-50"
+                            >
+                              Szerkesztés
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenMenuId(null);
+                                handleDeleteExpense(exp.id);
+                              }}
+                              className="block w-full text-left px-3 py-1.5 text-[10px] text-red-600 hover:bg-red-50"
+                            >
+                              Törlés
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="text-[10px] text-slate-500 space-y-0.5">
@@ -708,11 +741,7 @@ export default function ExpensesSection({
         </div>
       )}
 
-      {error && (
-        <p className="mt-2 text-[11px] text-red-600">
-          {error}
-        </p>
-      )}
+      {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
     </section>
   );
 }
