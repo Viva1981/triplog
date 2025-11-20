@@ -345,11 +345,10 @@ export default function ExpensesSection({
         );
       }
 
-      const mapped: TripExpense = {
-        ...data,
-        amount: Number(data.amount),
-      };
-
+      const mapped = {
+      ...data,
+      amount: Number(data.amount),
+      } as TripExpense;
       setExpenses((prev) => [mapped, ...prev]);
       setFormSuccess("Költség rögzítve.");
       setAmount("");
