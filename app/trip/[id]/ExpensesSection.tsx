@@ -335,26 +335,32 @@ export default function ExpensesSection({
           currency: cur,
           payment_method: paymentMethod,
         })
-        .select("id, trip_id, user_id, date, category, note, amount, currency, payment_method, created_at")
+        .select(
+          "id, trip_id, user_id, date, category, note, amount, currency, payment_method, created_at"
+        )
         .single();
 
-      if (error || !data) {
+      if (error) {
         console.error("EXPENSE INSERT ERROR:", error);
-        setFormError(
+        throw new Error(
           error?.message ?? "Nem sikerült rögzíteni a költséget."
         );
       }
 
-      const mapped = {
-      ...data,
-      amount: Number(data.amount),
-      } as TripExpense;
+      if (!data) {
+        throw new Error("Nem sikerült rögzíteni a költséget.");
+      }
+
+      const mapped: TripExpense = {
+        ...(data as any),
+        amount: Number((data as any).amount),
+      };
+
       setExpenses((prev) => [mapped, ...prev]);
       setFormSuccess("Költség rögzítve.");
       setAmount("");
       setNote("");
-
-      // currency / payment method marad, hogy gyorsabb legyen a következő rögzítés
+      // currency / payment method marad, hogy gyors legyen a következő rögzítés
     } catch (err: any) {
       console.error(err);
       setFormError(
