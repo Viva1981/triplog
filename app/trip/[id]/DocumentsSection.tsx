@@ -45,6 +45,12 @@ export default function DocumentsSection({
     event.target.value = "";
   };
 
+  const hasOtherUploader =
+    !!currentUserId &&
+    docFiles.some(
+      (file) => file.user_id && file.user_id !== currentUserId
+    );
+
   return (
     <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -114,7 +120,6 @@ export default function DocumentsSection({
                     handleRenameFile(updated);
                   }}
                   onDelete={(id) => {
-                    // itt is csak string | undefined mehet
                     handleDeleteFile(id, "document", file.drive_file_id);
                   }}
                   onOpen={() => {
@@ -129,12 +134,14 @@ export default function DocumentsSection({
             })}
           </div>
 
-          <p className="mt-3 text-[11px] leading-snug text-slate-500">
-            Csak az általad feltöltött dokumentumokat tudod átnevezni vagy
-            törölni az alkalmazásból. Más utazók anyagaihoz továbbra is
-            hozzáférsz a Google Drive jogosultságai alapján, de a törlést és
-            átnevezést ők tudják elvégezni.
-          </p>
+          {hasOtherUploader && (
+            <p className="mt-3 text-[11px] leading-snug text-slate-500">
+              Csak az általad feltöltött dokumentumokat tudod átnevezni vagy
+              törölni az alkalmazásból. Más utazók anyagaihoz továbbra is
+              hozzáférsz a Google Drive jogosultságai alapján, de a törlést és
+              átnevezést ők tudják elvégezni.
+            </p>
+          )}
         </>
       )}
     </section>

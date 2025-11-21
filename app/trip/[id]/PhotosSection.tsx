@@ -46,6 +46,13 @@ export default function PhotosSection({
     event.target.value = "";
   };
 
+  // Van-e olyan fotó, amit NEM a jelenlegi user töltött fel?
+  const hasOtherUploader =
+    !!currentUserId &&
+    photoFiles.some(
+      (file) => file.user_id && file.user_id !== currentUserId
+    );
+
   return (
     <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
       {/* Fejléc */}
@@ -112,21 +119,21 @@ export default function PhotosSection({
                     handleRenameFile(updated);
                   }}
                   onDelete={(id) => {
-                    // driveFileId típusa: string | undefined, nincs null
                     handleDeleteFile(id, "photo", file.drive_file_id);
                   }}
-                  // fotóknál onOpen nem kell – nem nyitjuk Drive-ban
                 />
               );
             })}
           </div>
 
-          <p className="mt-3 text-[11px] leading-snug text-slate-500">
-            Csak az általad feltöltött fotókat tudod átnevezni vagy törölni az
-            alkalmazásból. A többiek által feltöltött képek kezelése a Google
-            Drive jogosultságaitól függ – ilyen esetben kérd meg az illetőt,
-            hogy ő módosítsa vagy törölje a fájlt.
-          </p>
+          {hasOtherUploader && (
+            <p className="mt-3 text-[11px] leading-snug text-slate-500">
+              Csak az általad feltöltött fotókat tudod átnevezni vagy törölni
+              az alkalmazásból. A többiek által feltöltött képek kezelése a
+              Google Drive jogosultságaitól függ – ilyen esetben kérd meg az
+              illetőt, hogy ő módosítsa vagy törölje a fájlt.
+            </p>
+          )}
         </>
       )}
     </section>
