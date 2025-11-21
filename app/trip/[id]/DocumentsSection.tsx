@@ -1,5 +1,8 @@
+"use client";
+
 import React from "react";
-import type { TripFile } from "../../../lib/trip/types";
+import type { TripFile } from "@/lib/trip/types";
+import FileCard from "./components/FileCard";
 
 type DocumentsSectionProps = {
   docFiles: TripFile[];
@@ -16,8 +19,9 @@ type DocumentsSectionProps = {
   handleDeleteFile: (
     fileId: string,
     type: "photo" | "document",
-    driveFileId?: string
+    driveFileId?: string | null
   ) => Promise<void> | void;
+  currentUserId?: string | null;
 };
 
 export default function DocumentsSection({
@@ -30,102 +34,108 @@ export default function DocumentsSection({
   uploadFileToDriveAndSave,
   handleRenameFile,
   handleDeleteFile,
+  currentUserId,
 }: DocumentsSectionProps) {
+  const handleDocChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await uploadFileToDriveAndSave("document", file);
+    event.target.value = "";
+  };
+
   return (
-    <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
-      <h2 className="text-sm font-semibold mb-2">Dokumentumok</h2>
-      <p className="text-xs text-slate-500 mb-3">
-        Foglalások, beszállókártyák, jegyek és más fontos dokumentumok – töltsd
-        fel őket közvetlenül az eszközödről, mi elmentjük az utazás mappájába.
-      </p>
-
-      <div className="space-y-2 mb-3">
-        <div className="flex items-center justify-between gap-2">
-          <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl bg-[#16ba53] text-white text-center cursor-pointer hover:opacity-90 transition font-medium">
-            {submittingDoc ? "Feltöltés..." : "Feltöltés eszközről"}
-            <input
-              type="file"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  uploadFileToDriveAndSave("document", file);
-                  e.target.value = "";
-                }
-              }}
-            />
-          </label>
+    <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">
+            Dokumentumok
+          </h2>
+          <p className="text-xs text-slate-500">
+            Foglalások, beszállókártyák, jegyek és más fontos dokumentumok –
+            töltsd fel őket közvetlenül az eszközödről, mi elmentjük az utazás
+            mappájába.
+          </p>
         </div>
-
-        {docError && (
-          <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
-            {docError}
-          </div>
-        )}
-
-        {docSuccess && (
-          <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
-            {docSuccess}
-          </div>
-        )}
+        <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
+          <input
+            type="file"
+            className="hidden"
+            onChange={handleDocChange}
+            disabled={submittingDoc}
+          />
+          {submittingDoc ? "Feltöltés..." : "Feltöltés eszközről"}
+        </label>
       </div>
 
-      {loadingFiles && (
-        <p className="text-[11px] text-slate-500">
-          Dokumentumok betöltése...
-        </p>
+      {/* státusz üzenetek */}
+      {docError && (
+        <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+          {docError}
+        </div>
       )}
-
+      {docSuccess && (
+        <div className="mb-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          {docSuccess}
+        </div>
+      )}
       {filesError && (
-        <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1 mb-2">
+        <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
           {filesError}
         </div>
       )}
 
-      {!loadingFiles && docFiles.length === 0 && (
-        <p className="text-[11px] text-slate-500">
-          Még nincs egyetlen dokumentum sem ehhez az utazáshoz.
-        </p>
-      )}
-
-      {!loadingFiles && docFiles.length > 0 && (
-        <div className="mt-2 grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1">
-          {docFiles.map((file) => (
-            <div
-              key={file.id}
-              className="border border-slate-200 rounded-xl p-2 flex flex-col text-[11px]"
-            >
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <a
-                  href={file.preview_link || "#"}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium truncate text-slate-800 underline"
-                >
-                  {file.name}
-                </a>
-              </div>
-
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleRenameFile(file)}
-                  className="text-[10px] text-slate-600 underline"
-                >
-                  Átnevezés
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteFile(file.id, "document")}
-                  className="text-[10px] text-red-500 underline"
-                >
-                  Törlés
-                </button>
-              </div>
-            </div>
-          ))}
+      {/* lista */}
+      {loadingFiles ? (
+        <div className="mt-4 text-xs text-slate-500">
+          Dokumentumok betöltése...
         </div>
+      ) : docFiles.length === 0 ? (
+        <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
+          Még nincs egyetlen dokumentum sem ehhez az utazáshoz.
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {docFiles.map((file) => {
+              const canManage =
+                file.user_id && currentUserId
+                  ? file.user_id === currentUserId
+                  : true;
+
+              return (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  canManage={canManage}
+                  onRename={(id, newName) => {
+                    const updated: TripFile = { ...file, name: newName };
+                    handleRenameFile(updated);
+                  }}
+                  onDelete={(id) => {
+                    handleDeleteFile(id, "document", file.drive_file_id ?? null);
+                  }}
+                  onOpen={(id) => {
+                    const url =
+                      file.preview_link || file.thumbnail_link || null;
+                    if (url) {
+                      window.open(url, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                />
+              );
+            })}
+          </div>
+
+          <p className="mt-3 text-[11px] leading-snug text-slate-500">
+            Csak az általad feltöltött dokumentumokat tudod átnevezni vagy
+            törölni az alkalmazásból. Más utazók anyagaihoz továbbra is
+            hozzáférsz a Google Drive jogosultságai alapján, de a törlést és
+            átnevezést ők tudják elvégezni.
+          </p>
+        </>
       )}
-    </div>
+    </section>
   );
 }

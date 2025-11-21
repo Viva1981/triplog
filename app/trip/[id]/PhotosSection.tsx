@@ -1,5 +1,7 @@
+"use client";
+
 import React from "react";
-import type { TripFile } from "../../../lib/trip/types";
+import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./components/FileCard";
 
 type PhotosSectionProps = {
@@ -17,8 +19,10 @@ type PhotosSectionProps = {
   handleDeleteFile: (
     fileId: string,
     type: "photo" | "document",
-    driveFileId?: string
+    driveFileId?: string | null
   ) => Promise<void> | void;
+  /** Jelenlegi user Supabase ID – ha megadod, csak a saját feltöltéseid szerkeszthetők. */
+  currentUserId?: string | null;
 };
 
 export default function PhotosSection({
@@ -31,93 +35,99 @@ export default function PhotosSection({
   uploadFileToDriveAndSave,
   handleRenameFile,
   handleDeleteFile,
+  currentUserId,
 }: PhotosSectionProps) {
   const handlePhotoChange = async (
-    e: React.ChangeEvent<HTMLInputElement>
+    event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = e.target.files?.[0];
+    const file = event.target.files?.[0];
     if (!file) return;
-
-    try {
-      await uploadFileToDriveAndSave("photo", file);
-    } finally {
-      e.target.value = "";
-    }
+    await uploadFileToDriveAndSave("photo", file);
+    event.target.value = "";
   };
 
   return (
-    <section className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
+    <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
       {/* Fejléc */}
-      <div className="mb-3">
-        <h2 className="text-sm font-semibold mb-1">Fotók</h2>
-        <p className="text-xs text-slate-500">
-          Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
-          automatikusan elmenti őket az utazás Google Drive mappájába.
-        </p>
-      </div>
-
-      {/* Feltöltő sáv */}
-      <div className="space-y-2 mb-3">
-        <div className="flex items-center justify-between gap-2">
-          <label className="flex-1 text-[11px] px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer hover:bg-slate-100 transition font-medium text-center">
-            {submittingPhoto ? "Feltöltés..." : "Feltöltés eszközről"}
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              disabled={submittingPhoto}
-              onChange={handlePhotoChange}
-            />
-          </label>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">Fotók</h2>
+          <p className="text-xs text-slate-500">
+            Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
+            automatikusan elmenti őket az utazás Google Drive mappájába.
+          </p>
         </div>
-
-        {photoError && (
-          <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
-            {photoError}
-          </div>
-        )}
-        {photoSuccess && (
-          <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-2 py-1">
-            {photoSuccess}
-          </div>
-        )}
+        <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoChange}
+            disabled={submittingPhoto}
+          />
+          {submittingPhoto ? "Feltöltés..." : "Feltöltés eszközről"}
+        </label>
       </div>
 
+      {/* státusz üzenetek */}
+      {photoError && (
+        <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+          {photoError}
+        </div>
+      )}
+      {photoSuccess && (
+        <div className="mb-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          {photoSuccess}
+        </div>
+      )}
       {filesError && (
-        <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1 mb-2">
+        <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
           {filesError}
         </div>
       )}
 
+      {/* lista */}
       {loadingFiles ? (
-        <p className="text-[11px] text-slate-500">Fotók betöltése...</p>
+        <div className="mt-4 text-xs text-slate-500">Fotók betöltése...</div>
       ) : photoFiles.length === 0 ? (
-        <div className="mt-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-3 py-4 text-center">
-          <p className="text-[12px] font-medium text-slate-700 mb-1">
-            Még nincs feltöltött fotó.
-          </p>
-          <p className="text-[11px] text-slate-500">
-            Tölts fel egy képet az eszközödről, hogy elkezdődjön az utazás
-            fotónaplója.
-          </p>
+        <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
+          Még nincs egyetlen fotó sem ehhez az utazáshoz.
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {photoFiles.map((file) => (
-            <FileCard
-              key={file.id}
-              file={file}
-              onRename={(id, newName) => {
-                const updated: TripFile = { ...file, name: newName };
-                handleRenameFile(updated);
-              }}
-              onDelete={(id) => {
-                handleDeleteFile(id, "photo", file.drive_file_id || undefined);
-              }}
-              // NINCS onOpen → fotóknál nem nyitjuk Drive-ban
-            />
-          ))}
-        </div>
+        <>
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            {photoFiles.map((file) => {
+              // ha van user_id ÉS currentUserId, akkor csak a saját képeidnél lesz menü
+              const canManage =
+                file.user_id && currentUserId
+                  ? file.user_id === currentUserId
+                  : true;
+
+              return (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  canManage={canManage}
+                  onRename={(id, newName) => {
+                    const updated: TripFile = { ...file, name: newName };
+                    handleRenameFile(updated);
+                  }}
+                  onDelete={(id) => {
+                    handleDeleteFile(id, "photo", file.drive_file_id ?? null);
+                  }}
+                  // fotóknál onOpen nem kell – nem nyitjuk Drive-ban
+                />
+              );
+            })}
+          </div>
+
+          <p className="mt-3 text-[11px] leading-snug text-slate-500">
+            Csak az általad feltöltött fotókat tudod átnevezni vagy törölni az
+            alkalmazásból. A többiek által feltöltött képek kezelése a Google
+            Drive jogosultságaitól függ – ilyen esetben kérd meg az illetőt,
+            hogy ő módosítsa vagy törölje a fájlt.
+          </p>
+        </>
       )}
     </section>
   );
