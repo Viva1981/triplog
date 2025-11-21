@@ -1,7 +1,7 @@
-import React from "react";
+import React, { type ReactNode } from "react";
 import { TripFile } from "./types";
 
-export function getFileIcon(file: TripFile): JSX.Element {
+export function getFileIcon(file: TripFile): ReactNode {
   const ext = file.name.split(".").pop()?.toLowerCase();
 
   switch (ext) {
