@@ -106,7 +106,10 @@ export default function PhotosSection({
     lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
 
   // 👉 swipe logika framer-motionhöz
-  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+  const handleDragEnd = (
+    _: MouseEvent | TouchEvent | PointerEvent,
+    info: PanInfo
+  ) => {
     const threshold = 80; // px – ennyinél döntjük el, hogy lapozunk-e
 
     if (info.offset.x > threshold) {
@@ -116,7 +119,6 @@ export default function PhotosSection({
       // balra húzta → következő kép
       showNext();
     }
-    // ha kicsi volt az elmozdulás, framer-motion magától visszapattintja 0-ra
   };
 
   return (
@@ -228,10 +230,11 @@ export default function PhotosSection({
           />
 
           <div className="relative z-50 max-h-[90vh] w-full max-w-3xl rounded-2xl bg-black/80 p-3 md:p-4">
+            {/* Bezárás gomb csak desktopon */}
             <button
               type="button"
               onClick={closeLightbox}
-              className="absolute right-3 top-3 rounded-full bg-black/60 px-2 py-1 text-xs text-slate-100 hover:bg-black"
+              className="absolute right-3 top-3 hidden rounded-full bg-black/60 px-2 py-1 text-xs text-slate-100 hover:bg-black md:inline-flex"
             >
               Bezárás
             </button>
@@ -246,7 +249,7 @@ export default function PhotosSection({
                 ◀
               </button>
 
-              {/* 👉 Itt van a swipe-elhető kép */}
+              {/* 👉 Swipe-elhető kép */}
               <motion.div
                 className="flex-1"
                 drag="x"
@@ -260,7 +263,8 @@ export default function PhotosSection({
                   referrerPolicy="no-referrer"
                   className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain"
                 />
-                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-200">
+                {/* Név + index CSAK desktopon */}
+                <div className="mt-2 hidden items-center justify-between text-[11px] text-slate-200 md:flex">
                   <span className="truncate pr-2">
                     {currentPhoto.name}
                   </span>
@@ -276,24 +280,6 @@ export default function PhotosSection({
                 className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-slate-100 hover:bg-black md:flex"
               >
                 ▶
-              </button>
-            </div>
-
-            {/* mobil gombok alul */}
-            <div className="mt-3 flex items-center justify-center gap-4 md:hidden">
-              <button
-                type="button"
-                onClick={showPrev}
-                className="rounded-full bg-black/60 px-3 py-1 text-xs text-slate-100 hover:bg-black"
-              >
-                Előző
-              </button>
-              <button
-                type="button"
-                onClick={showNext}
-                className="rounded-full bg-black/60 px-3 py-1 text-xs text-slate-100 hover:bg-black"
-              >
-                Következő
               </button>
             </div>
           </div>
