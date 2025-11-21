@@ -139,7 +139,7 @@ export default function TripStatsPage() {
         {/* Fejléc */}
         <section className="bg-white rounded-2xl shadow-md p-4 md:p-5 border border-slate-100 mb-4">
           <h1 className="text-xl md:text-2xl font-semibold text-slate-900 mb-1">
-            Költségek statisztika
+            Költség statisztika
           </h1>
           <p className="text-xs md:text-sm text-slate-500 mb-2">
             Egyszerű összefoglaló arról, hogy mire mennyi ment el az utazáson –
