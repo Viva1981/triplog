@@ -598,18 +598,20 @@ const handleScrollToExpenses = () => {
 />
         {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
         <section className="grid gap-4 md:grid-cols-2 mb-4">
-          <PhotosSection
-            photoFiles={photoFiles}
-            loadingFiles={loadingFiles}
-            filesError={filesError}
-            submittingPhoto={submittingPhoto}
-            photoError={photoError}
-            photoSuccess={photoSuccess}
-            uploadFileToDriveAndSave={uploadFileToDriveAndSave}
-            handleRenameFile={handleRenameFile}
-            handleDeleteFile={handleDeleteFile}
-            currentUserId={user?.id ?? null}
-          />
+<PhotosSection
+  photoFiles={photoFiles}
+  loadingFiles={loadingFiles}
+  filesError={filesError}
+  submittingPhoto={submittingPhoto}
+  photoError={photoError}
+  photoSuccess={photoSuccess}
+  uploadFileToDriveAndSave={(file) =>
+    uploadFileToDriveAndSave("photo", file)
+  }
+  handleRenameFile={handleRenameFile}
+  handleDeleteFile={handleDeleteFile}
+  currentUserId={user?.id ?? null}
+/>
 
           <DocumentsSection
             docFiles={docFiles}
@@ -618,7 +620,9 @@ const handleScrollToExpenses = () => {
             submittingDoc={submittingDoc}
             docError={docError}
             docSuccess={docSuccess}
-            uploadFileToDriveAndSave={uploadFileToDriveAndSave}
+            uploadFileToDriveAndSave={(file) =>
+  uploadFileToDriveAndSave("document", file)
+}
             handleRenameFile={handleRenameFile}
             handleDeleteFile={handleDeleteFile}
             currentUserId={user?.id ?? null}
