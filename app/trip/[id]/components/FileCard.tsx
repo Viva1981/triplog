@@ -26,8 +26,6 @@ export default function FileCard({
   const isPhoto = file.type === "photo";
   const thumbSrc = file.thumbnail_link || file.preview_link || undefined;
 
-  const hasMenuItems = canManage || !!onOpen;
-
   return (
     <div className="relative flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm hover:shadow-md transition">
       {/* Thumbnail / Icon */}
@@ -69,8 +67,8 @@ export default function FileCard({
         )}
       </div>
 
-      {/* Kebab menü – csak ha van mit mutatni, és csak a feltöltőnek (canManage) vagy ha onOpen menübe akarjuk tenni */}
-      {hasMenuItems && canManage && (
+      {/* Kebab menü – CSAK a feltöltőnek (canManage) */}
+      {canManage && (
         <div className="absolute right-3 top-3">
           <button
             onClick={() => setMenuOpen((prev) => !prev)}
