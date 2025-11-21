@@ -1,6 +1,7 @@
+import React from "react";
 import { TripFile } from "./types";
 
-export function getFileIcon(file: TripFile) {
+export function getFileIcon(file: TripFile): JSX.Element {
   const ext = file.name.split(".").pop()?.toLowerCase();
 
   switch (ext) {
