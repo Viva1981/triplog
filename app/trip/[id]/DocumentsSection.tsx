@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { TripFile } from "@/lib/trip/types";
-import FileCard from "./components/FileCard";
+import FileCard from "./FileCard";
 
 type DocumentsSectionProps = {
   docFiles: TripFile[];
