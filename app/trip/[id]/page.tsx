@@ -615,6 +615,8 @@ const handleScrollToExpenses = () => {
 
 <DocumentsSection
   docFiles={docFiles}
+  loadingFiles={loadingFiles}
+  filesError={filesError}
   submittingDoc={submittingDoc}
   docError={docError}
   docSuccess={docSuccess}
@@ -623,7 +625,6 @@ const handleScrollToExpenses = () => {
   handleDeleteFile={handleDeleteFile}
   currentUserId={user?.id ?? null}
 />
-
           <NotesSection
             tripId={trip.id}
             initialNotes={trip.notes ?? null}
