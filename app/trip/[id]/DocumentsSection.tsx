@@ -19,7 +19,7 @@ type DocumentsSectionProps = {
   handleDeleteFile: (
     fileId: string,
     type: "photo" | "document",
-    driveFileId?: string | null
+    driveFileId?: string
   ) => Promise<void> | void;
   currentUserId?: string | null;
 };
@@ -114,11 +114,12 @@ export default function DocumentsSection({
                     handleRenameFile(updated);
                   }}
                   onDelete={(id) => {
-                    handleDeleteFile(id, "document", file.drive_file_id ?? null);
+                    // itt is csak string | undefined mehet
+                    handleDeleteFile(id, "document", file.drive_file_id);
                   }}
-                  onOpen={(id) => {
+                  onOpen={() => {
                     const url =
-                      file.preview_link || file.thumbnail_link || null;
+                      file.preview_link || file.thumbnail_link || undefined;
                     if (url) {
                       window.open(url, "_blank", "noopener,noreferrer");
                     }

@@ -19,7 +19,7 @@ type PhotosSectionProps = {
   handleDeleteFile: (
     fileId: string,
     type: "photo" | "document",
-    driveFileId?: string | null
+    driveFileId?: string
   ) => Promise<void> | void;
   /** Jelenlegi user Supabase ID – ha megadod, csak a saját feltöltéseid szerkeszthetők. */
   currentUserId?: string | null;
@@ -97,7 +97,6 @@ export default function PhotosSection({
         <>
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
             {photoFiles.map((file) => {
-              // ha van user_id ÉS currentUserId, akkor csak a saját képeidnél lesz menü
               const canManage =
                 file.user_id && currentUserId
                   ? file.user_id === currentUserId
@@ -113,7 +112,8 @@ export default function PhotosSection({
                     handleRenameFile(updated);
                   }}
                   onDelete={(id) => {
-                    handleDeleteFile(id, "photo", file.drive_file_id ?? null);
+                    // driveFileId típusa: string | undefined, nincs null
+                    handleDeleteFile(id, "photo", file.drive_file_id);
                   }}
                   // fotóknál onOpen nem kell – nem nyitjuk Drive-ban
                 />
