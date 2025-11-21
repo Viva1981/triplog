@@ -484,14 +484,17 @@ export default function TripStatsView({
             <button
               type="button"
               onClick={handlePrevDay}
-              disabled={ !selectedDate || (!!minDate && !!selectedDate && selectedDate <= minDate)}
+              disabled={
+                !selectedDate ||
+                (!!minDate && !!selectedDate && selectedDate <= minDate)
+              }
               className="px-2 py-1 rounded-full border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ◀
             </button>
             <input
               type="date"
-              className="rounded-full border border-slate-200 px-3 py-1 outline-none text-[11px] focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+              className="rounded-full border border-slate-200 px-3 py-1 outline-none text-[11px] focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53] min-w-[140px]"
               value={selectedDate ?? ""}
               onChange={(e) => setSelectedDate(e.target.value || null)}
               min={minDate ?? undefined}
@@ -500,7 +503,10 @@ export default function TripStatsView({
             <button
               type="button"
               onClick={handleNextDay}
-              disabled={ !selectedDate || (!!maxDate && !!selectedDate && selectedDate >= maxDate)}
+              disabled={
+                !selectedDate ||
+                (!!maxDate && !!selectedDate && selectedDate >= maxDate)
+              }
               className="px-2 py-1 rounded-full border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ▶
@@ -567,12 +573,21 @@ export default function TripStatsView({
           </span>
         )}
 
-        <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-100 text-[11px] text-slate-700">
-          {groupMode === "category" && "Kategóriák száma:"}
-          {groupMode === "currency" && "Pénznemek száma:"}
-          {groupMode === "user" && "Útitársak száma:"}{" "}
-          <span className="font-semibold ml-1">{groupCount}</span>
-        </span>
+        {/* Számláló badge-ek */}
+        {groupMode !== "user" && (
+          <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-100 text-[11px] text-slate-700">
+            {groupMode === "category" && "Kategóriák száma:"}
+            {groupMode === "currency" && "Pénznemek száma:"}{" "}
+            <span className="font-semibold ml-1">{groupCount}</span>
+          </span>
+        )}
+
+        {groupMode === "user" && groupCount > 1 && (
+          <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-100 text-[11px] text-slate-700">
+            Költést rögzített:{" "}
+            <span className="font-semibold ml-1">{groupCount} fő</span>
+          </span>
+        )}
       </div>
 
       {!hasAnyData ? (
@@ -696,6 +711,7 @@ export default function TripStatsView({
                   (sum, v) => sum + v,
                   0
                 );
+
                 const ratio =
                   maxUserTotal > 0 ? (totalAll / maxUserTotal) * 100 : 0;
                 const width = Math.max(8, ratio);
@@ -709,16 +725,11 @@ export default function TripStatsView({
                     key={row.userId}
                     className="border border-slate-100 rounded-2xl px-3 py-2 bg-slate-50/60"
                   >
-                    <div className="flex items-center justify-between mb-1 gap-2">
-                      <div>
-                        <p className="text-[12px] font-semibold text-slate-900">
-                          {row.label}
-                        </p>
-                        <p className="text-[10px] text-slate-500">{totalSummary}</p>
-                      </div>
-                      <span className="text-[11px] text-slate-700 font-medium">
-                        {formatAmount(totalAll)}
-                      </span>
+                    <div className="mb-1">
+                      <p className="text-[12px] font-semibold text-slate-900">
+                        {row.label}
+                      </p>
+                      <p className="text-[10px] text-slate-500">{totalSummary}</p>
                     </div>
 
                     <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
