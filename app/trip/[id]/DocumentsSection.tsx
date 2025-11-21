@@ -71,7 +71,7 @@ export default function DocumentsSection({
             onChange={handleDocChange}
             disabled={submittingDoc}
           />
-          {submittingDoc ? "Feltöltés..." : "Feltöltés eszközről"}
+          {submittingDoc ? "Feltöltés..." : "Feltöltés"}
         </label>
       </div>
 
@@ -106,22 +106,17 @@ export default function DocumentsSection({
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {docFiles.map((file) => {
               const canManage =
-                file.user_id && currentUserId
-                  ? file.user_id === currentUserId
-                  : true;
+                !!currentUserId && !!file.user_id && file.user_id === currentUserId;
 
               return (
                 <FileCard
                   key={file.id}
                   file={file}
                   canManage={canManage}
-                  onRename={(id, newName) => {
-                    const updated: TripFile = { ...file, name: newName };
-                    handleRenameFile(updated);
-                  }}
-                  onDelete={(id) => {
-                    handleDeleteFile(id, "document", file.drive_file_id);
-                  }}
+                  onRename={() => handleRenameFile(file)}
+                  onDelete={() =>
+                    handleDeleteFile(file.id, "document", file.drive_file_id)
+                  }
                   onOpen={() => {
                     const url =
                       file.preview_link || file.thumbnail_link || undefined;

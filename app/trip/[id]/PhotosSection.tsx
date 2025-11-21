@@ -72,7 +72,7 @@ export default function PhotosSection({
             onChange={handlePhotoChange}
             disabled={submittingPhoto}
           />
-          {submittingPhoto ? "Feltöltés..." : "Feltöltés eszközről"}
+          {submittingPhoto ? "Feltöltés..." : "Feltöltés"}
         </label>
       </div>
 
@@ -104,23 +104,19 @@ export default function PhotosSection({
         <>
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
             {photoFiles.map((file) => {
+              // Csak a feltöltő kezelheti – ha nincs currentUserId vagy user_id, akkor senki
               const canManage =
-                file.user_id && currentUserId
-                  ? file.user_id === currentUserId
-                  : true;
+                !!currentUserId && !!file.user_id && file.user_id === currentUserId;
 
               return (
                 <FileCard
                   key={file.id}
                   file={file}
                   canManage={canManage}
-                  onRename={(id, newName) => {
-                    const updated: TripFile = { ...file, name: newName };
-                    handleRenameFile(updated);
-                  }}
-                  onDelete={(id) => {
-                    handleDeleteFile(id, "photo", file.drive_file_id);
-                  }}
+                  onRename={() => handleRenameFile(file)}
+                  onDelete={() =>
+                    handleDeleteFile(file.id, "photo", file.drive_file_id)
+                  }
                 />
               );
             })}

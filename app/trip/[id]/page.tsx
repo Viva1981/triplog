@@ -608,6 +608,7 @@ const handleScrollToExpenses = () => {
             uploadFileToDriveAndSave={uploadFileToDriveAndSave}
             handleRenameFile={handleRenameFile}
             handleDeleteFile={handleDeleteFile}
+            currentUserId={user?.id ?? null}
           />
 
           <DocumentsSection
@@ -620,6 +621,7 @@ const handleScrollToExpenses = () => {
             uploadFileToDriveAndSave={uploadFileToDriveAndSave}
             handleRenameFile={handleRenameFile}
             handleDeleteFile={handleDeleteFile}
+            currentUserId={user?.id ?? null}
           />
 
           <NotesSection
