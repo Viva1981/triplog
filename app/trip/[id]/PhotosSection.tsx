@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./components/FileCard";
+import { motion, PanInfo } from "framer-motion";
 
 type PhotosSectionProps = {
   photoFiles: TripFile[];
@@ -103,6 +104,20 @@ export default function PhotosSection({
 
   const currentPhoto =
     lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
+
+  // 👉 swipe logika framer-motionhöz
+  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const threshold = 80; // px – ennyinél döntjük el, hogy lapozunk-e
+
+    if (info.offset.x > threshold) {
+      // jobbra húzta → előző kép
+      showPrev();
+    } else if (info.offset.x < -threshold) {
+      // balra húzta → következő kép
+      showNext();
+    }
+    // ha kicsi volt az elmozdulás, framer-motion magától visszapattintja 0-ra
+  };
 
   return (
     <>
@@ -205,6 +220,7 @@ export default function PhotosSection({
       {/* LIGHTBOX / MODAL */}
       {currentPhoto && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-3">
+          {/* háttér, kattintásra bezár */}
           <button
             type="button"
             onClick={closeLightbox}
@@ -221,6 +237,7 @@ export default function PhotosSection({
             </button>
 
             <div className="flex items-center justify-between gap-2">
+              {/* desktop nyilak bal/jobb */}
               <button
                 type="button"
                 onClick={showPrev}
@@ -229,7 +246,14 @@ export default function PhotosSection({
                 ◀
               </button>
 
-              <div className="flex-1">
+              {/* 👉 Itt van a swipe-elhető kép */}
+              <motion.div
+                className="flex-1"
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.2}
+                onDragEnd={handleDragEnd}
+              >
                 <img
                   src={getLightboxImageSrc(currentPhoto)}
                   alt={currentPhoto.name}
@@ -244,7 +268,7 @@ export default function PhotosSection({
                     {lightboxIndex! + 1} / {photoFiles.length}
                   </span>
                 </div>
-              </div>
+              </motion.div>
 
               <button
                 type="button"
@@ -255,6 +279,7 @@ export default function PhotosSection({
               </button>
             </div>
 
+            {/* mobil gombok alul */}
             <div className="mt-3 flex items-center justify-center gap-4 md:hidden">
               <button
                 type="button"
