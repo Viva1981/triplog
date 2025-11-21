@@ -124,12 +124,12 @@ export default function TripDetailPage() {
       setFilesError(null);
 
       const { data, error } = await supabase
-        .from("trip_files")
-        .select(
-          "id, type, name, drive_file_id, thumbnail_link, preview_link"
-        )
-        .eq("trip_id", tripId)
-        .order("created_at", { ascending: true });
+  .from("trip_files")
+  .select(
+    "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link"
+  )
+  .eq("trip_id", tripId)
+  .order("created_at", { ascending: true });
 
       if (error) {
         console.error("FILES FETCH ERROR:", error);
@@ -337,22 +337,22 @@ export default function TripDetailPage() {
 
       const displayName = getBaseName(file.name);
 
-      const { data, error } = await supabase
-        .from("trip_files")
-        .insert({
-          trip_id: trip.id,
-          user_id: user.id,
-          type,
-          drive_file_id: fileId,
-          name: displayName,
-          mime_type: file.type || null,
-          thumbnail_link: thumb,
-          preview_link: webView,
-        })
-        .select(
-          "id, type, name, drive_file_id, thumbnail_link, preview_link"
-        )
-        .single();
+   const { data, error } = await supabase
+  .from("trip_files")
+  .insert({
+    trip_id: trip.id,
+    user_id: user.id,
+    type,
+    drive_file_id: fileId,
+    name: displayName,
+    mime_type: file.type || null,
+    thumbnail_link: thumb,
+    preview_link: webView,
+  })
+  .select(
+    "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link"
+  )
+  .single();
 
       if (error || !data) {
         console.error("TRIP_FILES INSERT ERROR:", error);
