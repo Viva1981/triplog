@@ -227,7 +227,7 @@ export default function PhotosSection({
 
       {/* LIGHTBOX / MODAL */}
       {currentPhoto && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-3">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 md:px-3">
           {/* háttér, kattintásra bezár */}
           <button
             type="button"
@@ -235,7 +235,7 @@ export default function PhotosSection({
             className="absolute inset-0 h-full w-full cursor-default"
           />
 
-          <div className="relative z-50 max-h-[90vh] w-full max-w-3xl rounded-2xl bg-black/80 p-3 md:p-4">
+          <div className="relative z-50 flex h-full w-full items-center justify-center md:max-h-[90vh] md:w-full md:max-w-3xl md:rounded-2xl md:bg-black/80 md:p-4">
             {/* Bezárás gomb csak desktopon */}
             <button
               type="button"
@@ -245,7 +245,7 @@ export default function PhotosSection({
               Bezárás
             </button>
 
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex h-full w-full items-center justify-between gap-2">
               {/* desktop nyilak bal/jobb */}
               <button
                 type="button"
@@ -257,7 +257,7 @@ export default function PhotosSection({
 
               {/* 👉 Swipe- + pinch-zoom-olható kép */}
               <motion.div
-                className="flex-1"
+                className="flex-1 h-full"
                 drag="x"
                 dragConstraints={{ left: 0, right: 0 }}
                 dragElastic={0.2}
@@ -269,12 +269,12 @@ export default function PhotosSection({
                   wheel={{ disabled: true }} // desktopon ne görgetésre zoomoljon
                   minScale={1}
                 >
-                  <TransformComponent wrapperClass="flex justify-center">
+                  <TransformComponent wrapperClass="flex h-full items-center justify-center">
                     <img
                       src={getLightboxImageSrc(currentPhoto)}
                       alt={currentPhoto.name}
                       referrerPolicy="no-referrer"
-                      className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain"
+                      className="mx-auto max-h-[80vh] w-auto rounded-none object-contain md:max-h-[70vh] md:rounded-xl"
                     />
                   </TransformComponent>
                 </TransformWrapper>
