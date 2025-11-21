@@ -1,5 +1,6 @@
 import React from "react";
 import type { TripFile } from "../../../lib/trip/types";
+import FileCard from "./components/FileCard";
 
 type PhotosSectionProps = {
   photoFiles: TripFile[];
@@ -31,114 +32,104 @@ export default function PhotosSection({
   handleRenameFile,
   handleDeleteFile,
 }: PhotosSectionProps) {
-  return (
-    <div className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
-      <h2 className="text-sm font-semibold mb-2">Fotók</h2>
-      <p className="text-xs text-slate-500 mb-3">
-        Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
-        automatikusan elmenti őket az utazás Google Drive mappájába.
-      </p>
+  const handlePhotoChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
+    try {
+      await uploadFileToDriveAndSave("photo", file);
+    } finally {
+      // reset input, hogy ugyanazt a fájlt is újra lehessen választani
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-2xl shadow-md p-4 border border-slate-100">
+      {/* Fejléc */}
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold mb-1">Fotók</h2>
+        <p className="text-xs text-slate-500">
+          Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
+          automatikusan elmenti őket az utazás Google Drive mappájába.
+        </p>
+      </div>
+
+      {/* Feltöltő sáv */}
       <div className="space-y-2 mb-3">
         <div className="flex items-center justify-between gap-2">
-          <label className="flex-1 text-[11px] px-3 py-1.5 rounded-xl bg-[#16ba53] text-white text-center cursor-pointer hover:opacity-90 transition font-medium">
+          <label className="flex-1 text-[11px] px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer hover:bg-slate-100 transition font-medium text-center">
             {submittingPhoto ? "Feltöltés..." : "Feltöltés eszközről"}
             <input
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  uploadFileToDriveAndSave("photo", file);
-                  e.target.value = "";
-                }
-              }}
+              disabled={submittingPhoto}
+              onChange={handlePhotoChange}
             />
           </label>
         </div>
 
+        {/* Upload státusz üzenetek */}
         {photoError && (
           <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
             {photoError}
           </div>
         )}
-
         {photoSuccess && (
-          <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-xl px-2 py-1">
+          <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-2 py-1">
             {photoSuccess}
           </div>
         )}
       </div>
 
-      {loadingFiles && (
-        <p className="text-[11px] text-slate-500">Fotók betöltése...</p>
-      )}
-
+      {/* Betöltési / hiba állapot a listára */}
       {filesError && (
         <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1 mb-2">
           {filesError}
         </div>
       )}
 
-      {!loadingFiles && photoFiles.length === 0 && (
-        <p className="text-[11px] text-slate-500">
-          Még nincs egyetlen fotó sem ehhez az utazáshoz.
-        </p>
-      )}
-
-      {!loadingFiles && photoFiles.length > 0 && (
-        <div className="mt-2 grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+      {loadingFiles ? (
+        <p className="text-[11px] text-slate-500">Fotók betöltése...</p>
+      ) : photoFiles.length === 0 ? (
+        <div className="mt-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-3 py-4 text-center">
+          <p className="text-[12px] font-medium text-slate-700 mb-1">
+            Még nincs feltöltött fotó.
+          </p>
+          <p className="text-[11px] text-slate-500">
+            Tölts fel egy képet az eszközödről, hogy elkezdődjön az utazás
+            fotónaplója.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {photoFiles.map((file) => (
-            <div
+            <FileCard
               key={file.id}
-              className="border border-slate-200 rounded-xl p-1.5 flex flex-col text-[11px]"
-            >
-              <a
-                href={file.preview_link || "#"}
-                target="_blank"
-                rel="noreferrer"
-                className="block mb-1"
-              >
-                {file.thumbnail_link ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={file.thumbnail_link}
-                    alt={file.name}
-                    className="w-full h-24 object-cover rounded-lg"
-                  />
-                ) : (
-                  <div className="w-full h-24 flex items-center justify-center bg-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-500">
-                      Nincs előnézet
-                    </span>
-                  </div>
-                )}
-              </a>
-
-              <div className="flex flex-col gap-1">
-                <p className="font-medium truncate">{file.name}</p>
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleRenameFile(file)}
-                    className="text-[10px] text-slate-600 underline"
-                  >
-                    Átnevezés
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteFile(file.id, "photo")}
-                    className="text-[10px] text-red-500 underline"
-                  >
-                    Törlés
-                  </button>
-                </div>
-              </div>
-            </div>
+              file={file}
+              onRename={(id, newName) => {
+                const updated: TripFile = { ...file, name: newName };
+                handleRenameFile(updated);
+              }}
+              onDelete={(id) => {
+                handleDeleteFile(id, "photo", file.drive_file_id || undefined);
+              }}
+              onOpen={() => {
+                const url =
+                  file.preview_link ||
+                  file.thumbnail_link ||
+                  undefined;
+                if (url) {
+                  window.open(url, "_blank", "noopener,noreferrer");
+                }
+              }}
+            />
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
