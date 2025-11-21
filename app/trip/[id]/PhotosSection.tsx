@@ -219,12 +219,14 @@ export default function PhotosSection({
 
               <div className="flex-1">
                 <img
+                  // FONTOS: először a thumbnail_link, mert ez biztosan image URL
                   src={
-                    currentPhoto.preview_link ||
                     currentPhoto.thumbnail_link ||
+                    currentPhoto.preview_link ||
                     ""
                   }
                   alt={currentPhoto.name}
+                  referrerPolicy="no-referrer"
                   className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain"
                 />
                 <div className="mt-2 flex items-center justify-between text-[11px] text-slate-200">
