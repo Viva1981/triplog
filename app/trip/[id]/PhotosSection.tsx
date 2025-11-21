@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./components/FileCard";
 import { motion, PanInfo } from "framer-motion";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 type PhotosSectionProps = {
   photoFiles: TripFile[];
@@ -111,6 +112,11 @@ export default function PhotosSection({
     info: PanInfo
   ) => {
     const threshold = 80; // px – ennyinél döntjük el, hogy lapozunk-e
+
+    // ha inkább oldalirányú a mozgás, mint felfelé/lefelé
+    if (Math.abs(info.offset.x) < Math.abs(info.offset.y)) {
+      return;
+    }
 
     if (info.offset.x > threshold) {
       // jobbra húzta → előző kép
@@ -249,7 +255,7 @@ export default function PhotosSection({
                 ◀
               </button>
 
-              {/* 👉 Swipe-elhető kép */}
+              {/* 👉 Swipe- + pinch-zoom-olható kép */}
               <motion.div
                 className="flex-1"
                 drag="x"
@@ -257,12 +263,22 @@ export default function PhotosSection({
                 dragElastic={0.2}
                 onDragEnd={handleDragEnd}
               >
-                <img
-                  src={getLightboxImageSrc(currentPhoto)}
-                  alt={currentPhoto.name}
-                  referrerPolicy="no-referrer"
-                  className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain"
-                />
+                <TransformWrapper
+                  pinch={{ disabled: false }}
+                  doubleClick={{ disabled: false }}
+                  wheel={{ disabled: true }} // desktopon ne görgetésre zoomoljon
+                  minScale={1}
+                >
+                  <TransformComponent wrapperClass="flex justify-center">
+                    <img
+                      src={getLightboxImageSrc(currentPhoto)}
+                      alt={currentPhoto.name}
+                      referrerPolicy="no-referrer"
+                      className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain"
+                    />
+                  </TransformComponent>
+                </TransformWrapper>
+
                 {/* Név + index CSAK desktopon */}
                 <div className="mt-2 hidden items-center justify-between text-[11px] text-slate-200 md:flex">
                   <span className="truncate pr-2">
