@@ -41,7 +41,6 @@ export default function PhotosSection({
     try {
       await uploadFileToDriveAndSave("photo", file);
     } finally {
-      // reset input, hogy ugyanazt a fájlt is újra lehessen választani
       e.target.value = "";
     }
   };
@@ -72,7 +71,6 @@ export default function PhotosSection({
           </label>
         </div>
 
-        {/* Upload státusz üzenetek */}
         {photoError && (
           <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1">
             {photoError}
@@ -85,7 +83,6 @@ export default function PhotosSection({
         )}
       </div>
 
-      {/* Betöltési / hiba állapot a listára */}
       {filesError && (
         <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-2 py-1 mb-2">
           {filesError}
@@ -117,15 +114,7 @@ export default function PhotosSection({
               onDelete={(id) => {
                 handleDeleteFile(id, "photo", file.drive_file_id || undefined);
               }}
-              onOpen={() => {
-                const url =
-                  file.preview_link ||
-                  file.thumbnail_link ||
-                  undefined;
-                if (url) {
-                  window.open(url, "_blank", "noopener,noreferrer");
-                }
-              }}
+              // NINCS onOpen → fotóknál nem nyitjuk Drive-ban
             />
           ))}
         </div>

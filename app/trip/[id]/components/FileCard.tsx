@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 
 import { TripFile } from "@/lib/trip/types";
 import { getFileIcon } from "@/lib/trip/fileIcons";
@@ -37,11 +36,9 @@ export default function FileCard({
       {/* Thumbnail / Icon */}
       <div className="w-full h-32 rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center">
         {isPhoto && file.thumbnail_link ? (
-          <Image
+          <img
             src={file.thumbnail_link}
             alt={file.name}
-            width={300}
-            height={200}
             className="object-cover w-full h-full"
           />
         ) : (
@@ -80,7 +77,7 @@ export default function FileCard({
 
         {menuOpen && (
           <div className="absolute right-0 mt-1 bg-white shadow-lg rounded-xl border border-slate-200 w-36 z-20">
-            {/* Megnyitás */}
+            {/* Megnyitás – csak ha kapunk onOpen-t (pl. doksiknál) */}
             {onOpen && (
               <button
                 onClick={() => {
@@ -93,7 +90,7 @@ export default function FileCard({
               </button>
             )}
 
-            {/* Szerkesztés */}
+            {/* Átnevezés */}
             <button
               onClick={() => {
                 setMenuOpen(false);
