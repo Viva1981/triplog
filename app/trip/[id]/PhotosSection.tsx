@@ -21,9 +21,25 @@ type PhotosSectionProps = {
     type: "photo" | "document",
     driveFileId?: string
   ) => Promise<void> | void;
-  /** Jelenlegi user Supabase ID – ha megadod, csak a saját feltöltéseid szerkeszthetők. */
   currentUserId?: string | null;
 };
+
+// Lightbox kép URL – próbáljunk nagyobb verziót előállítani
+function getLightboxImageSrc(file: TripFile): string {
+  if (file.thumbnail_link) {
+    let url = file.thumbnail_link;
+
+    // Google Drive thumbnail: ...googleusercontent.com...=s220 → s1600
+    if (url.includes("googleusercontent.com")) {
+      url = url.replace(/=s\d+(-c)?/, "=s1600");
+    }
+
+    return url;
+  }
+
+  // Végső fallback: preview_link (ha van)
+  return file.preview_link || "";
+}
 
 export default function PhotosSection({
   photoFiles,
@@ -48,7 +64,6 @@ export default function PhotosSection({
     event.target.value = "";
   };
 
-  // Van-e olyan fotó, amit NEM a jelenlegi user töltött fel?
   const hasOtherUploader =
     !!currentUserId &&
     photoFiles.some(
@@ -190,7 +205,6 @@ export default function PhotosSection({
       {/* LIGHTBOX / MODAL */}
       {currentPhoto && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-3">
-          {/* háttér katt → zár */}
           <button
             type="button"
             onClick={closeLightbox}
@@ -198,7 +212,6 @@ export default function PhotosSection({
           />
 
           <div className="relative z-50 max-h-[90vh] w-full max-w-3xl rounded-2xl bg-black/80 p-3 md:p-4">
-            {/* Close gomb */}
             <button
               type="button"
               onClick={closeLightbox}
@@ -207,7 +220,6 @@ export default function PhotosSection({
               Bezárás
             </button>
 
-            {/* kép + nav */}
             <div className="flex items-center justify-between gap-2">
               <button
                 type="button"
@@ -219,12 +231,7 @@ export default function PhotosSection({
 
               <div className="flex-1">
                 <img
-                  // FONTOS: először a thumbnail_link, mert ez biztosan image URL
-                  src={
-                    currentPhoto.thumbnail_link ||
-                    currentPhoto.preview_link ||
-                    ""
-                  }
+                  src={getLightboxImageSrc(currentPhoto)}
                   alt={currentPhoto.name}
                   referrerPolicy="no-referrer"
                   className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain"
@@ -248,7 +255,6 @@ export default function PhotosSection({
               </button>
             </div>
 
-            {/* mobilos nyilak alul */}
             <div className="mt-3 flex items-center justify-center gap-4 md:hidden">
               <button
                 type="button"
