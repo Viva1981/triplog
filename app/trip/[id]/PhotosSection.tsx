@@ -53,13 +53,10 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
   const baseZoomRef = useRef(1);
   const lastPanRef = useRef<{ x: number; y: number } | null>(null);
 
-  const sortedPhotos = useMemo(
-    () =>
-      [...photoFiles].sort((a, b) =>
-        (a.created_at || "").localeCompare(b.created_at || "")
-      ),
-    [photoFiles]
-  );
+const sortedPhotos = useMemo(
+  () => [...photoFiles].sort((a, b) => a.name.localeCompare(b.name)),
+  [photoFiles]
+);
 
   const hasFiles = sortedPhotos.length > 0;
 
