@@ -26,8 +26,32 @@ type PhotosSectionProps = {
   hasMultipleParticipants: boolean;
 };
 
+<<<<<<< HEAD
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+=======
+// Lightbox kép URL – most már stabil, drive_file_id alapú
+function getLightboxImageSrc(file: TripFile): string {
+  // 1) Stabil Drive thumbnail endpoint – nem jár le, mint a thumbnail_link
+  if (file.drive_file_id) {
+    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
+  }
+
+  // 2) Ha valamiért mégis van régi thumbnail_link, próbáljuk nagyítani (legacy fallback)
+  if (file.thumbnail_link) {
+    let url = file.thumbnail_link;
+
+    // Google Drive thumbnail: ...googleusercontent.com...=s220 → s1600
+    if (url.includes("googleusercontent.com")) {
+      url = url.replace(/=s\d+(-c)?/, "=s1600");
+    }
+
+    return url;
+  }
+
+  // 3) Végső fallback: preview_link (ha van)
+  return file.preview_link || "";
+>>>>>>> rollback-5bd5cbd
 }
 
 const PhotosSection: React.FC<PhotosSectionProps> = ({
