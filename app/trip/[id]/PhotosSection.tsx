@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
-import FileCard from "./components/FileCard";
+import FileCard from "./FileCard";
 import { motion, PanInfo } from "framer-motion";
 
 type PhotosSectionProps = {
