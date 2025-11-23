@@ -25,8 +25,14 @@ type PhotosSectionProps = {
   currentUserId?: string | null;
 };
 
-// Lightbox kép URL – próbáljunk nagyobb verziót előállítani
+// Lightbox kép URL – most már stabil, drive_file_id alapú
 function getLightboxImageSrc(file: TripFile): string {
+  // 1) Stabil Drive thumbnail endpoint – nem jár le, mint a thumbnail_link
+  if (file.drive_file_id) {
+    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
+  }
+
+  // 2) Ha valamiért mégis van régi thumbnail_link, próbáljuk nagyítani (legacy fallback)
   if (file.thumbnail_link) {
     let url = file.thumbnail_link;
 
@@ -38,7 +44,7 @@ function getLightboxImageSrc(file: TripFile): string {
     return url;
   }
 
-  // Végső fallback: preview_link (ha van)
+  // 3) Végső fallback: preview_link (ha van)
   return file.preview_link || "";
 }
 

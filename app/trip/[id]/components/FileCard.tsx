@@ -27,7 +27,13 @@ export default function FileCard({
   const [menuOpen, setMenuOpen] = useState(false);
 
   const isPhoto = file.type === "photo";
-  const thumbSrc = file.thumbnail_link || file.preview_link || undefined;
+
+  // ⚙️ Fotóknál: stabil Drive thumbnail endpoint (drive_file_id alapján),
+  // fallbackként marad a régi thumbnail_link / preview_link.
+  const thumbSrc =
+    isPhoto && file.drive_file_id
+      ? `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w400`
+      : file.thumbnail_link || file.preview_link || undefined;
 
   const renderPreview = () => {
     const content = isPhoto && thumbSrc ? (
