@@ -58,14 +58,14 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
 }) => {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  const handlePhotoChange = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await uploadFileToDriveAndSave("photo", file);
-    event.target.value = "";
-  };
+const handlePhotoChange = async (
+  event: React.ChangeEvent<HTMLInputElement>
+) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  await uploadFileToDriveAndSave("photo", file);
+  event.target.value = "";
+};
 
   const hasOtherUploader =
     !!currentUserId &&
