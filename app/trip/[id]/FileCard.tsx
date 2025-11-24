@@ -12,7 +12,7 @@ interface FileCardProps {
   onDelete: () => void;
   /** Dokumentumoknál opcionális "Megnyitás" akció (Drive-ban) vagy fotóknál lightbox nyitás. */
   onOpen?: () => void;
-  /** Ha meg van adva, a thumbnail-re kattintás ezt hívja (fotók lightbox-hoz). */
+  /** Ha meg van adva, a thumbnail-re kattintás ezt hívja (fotók/doksik lightbox-hoz). */
   onPreviewClick?: () => void;
 }
 
@@ -28,12 +28,16 @@ export default function FileCard({
 
   const isPhoto = file.type === "photo";
 
-  // Fotóknál: stabil Drive thumbnail endpoint (drive_file_id alapján),
-  // fallbackként marad a régi thumbnail_link / preview_link.
-  const thumbSrc =
-    isPhoto && file.drive_file_id
+  // 🔧 MINDEN fájltípushoz próbálunk stabil Drive thumb-ot adni.
+  const stableThumb =
+    file.drive_file_id
       ? `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w400`
-      : file.thumbnail_link || file.preview_link || undefined;
+      : undefined;
+
+  const thumbSrc =
+    stableThumb ||
+    file.thumbnail_link ||
+    (isPhoto ? file.preview_link || undefined : undefined);
 
   // 🔵 FOTÓ LAYOUT – teljes kártya kép, a menü szabadon kilóghat
   if (isPhoto) {
@@ -118,12 +122,34 @@ export default function FileCard({
     );
   }
 
-  // 🟠 DOKSI LAYOUT – marad a régi, név + ikon + "Megnyitás Drive-ban"
+  // 🟠 DOKSI LAYOUT – thumb (ha van) vagy ikon, plusz név + "Megnyitás Drive-ban"
+  const docPreviewInner = thumbSrc ? (
+    <img
+      src={thumbSrc}
+      alt={file.name}
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <div className="p-4 opacity-70">{getFileIcon(file)}</div>
+  );
+
+  const docPreview = onPreviewClick ? (
+    <button
+      type="button"
+      onClick={onPreviewClick}
+      className="flex h-32 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    >
+      {docPreviewInner}
+    </button>
+  ) : (
+    <div className="flex h-32 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+      {docPreviewInner}
+    </div>
+  );
+
   return (
     <div className="group relative flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
-      <div className="flex h-32 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100">
-        <div className="p-4 opacity-70">{getFileIcon(file)}</div>
-      </div>
+      {docPreview}
 
       <div className="flex flex-1 flex-col justify-between gap-1">
         <div
