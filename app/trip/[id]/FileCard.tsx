@@ -26,7 +26,7 @@ export default function FileCard({
 
   const isPhoto = file.type === "photo";
 
-  // Stabil thumbnail előnyben: Drive file ID → stabil URL
+  // Stabil thumbnail – Drive ID preferálása
   const stableThumb = file.drive_file_id
     ? `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w400`
     : undefined;
@@ -36,23 +36,34 @@ export default function FileCard({
     file.thumbnail_link ||
     (isPhoto ? file.preview_link || undefined : undefined);
 
-  // ---------------- CLICK OUTSIDE TO CLOSE ----------------
+  // ---------------- CLICK-OUTSIDE + SCROLL-ON-CLOSE ----------------
   useEffect(() => {
-function handleClickOutside(e: Event) {
-  if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-    setMenuOpen(false);
-  }
-}
+    function handleClickOutside(e: Event) {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        setMenuOpen(false);
+      }
+    }
 
-if (menuOpen) {
-  document.addEventListener("mousedown", handleClickOutside);
-  document.addEventListener("touchstart", handleClickOutside);
-}
+    function handleScroll() {
+      // bármilyen scroll → zárjuk a menüt
+      setMenuOpen(false);
+    }
 
-return () => {
-  document.removeEventListener("mousedown", handleClickOutside);
-  document.removeEventListener("touchstart", handleClickOutside);
-};
+    if (menuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+      // capture=true, hogy belső scroll is triggereljen
+      window.addEventListener("scroll", handleScroll, true);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
   }, [menuOpen]);
 
   // ---------------------------------------------------------
@@ -82,9 +93,9 @@ return () => {
           )}
         </button>
 
-        {/* KEBAB MENU – unified with document card */}
+        {/* KEBAB MENU – egységes dizájn */}
         {canManage && (
-          <div ref={menuRef} className="absolute right-2 top-2 z-20">
+          <div ref={menuRef} className="absolute right-2 top-2 z-10">
             {/* kebab button */}
             <button
               type="button"
@@ -99,7 +110,7 @@ return () => {
 
             {/* menu panel */}
             {menuOpen && (
-              <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
+              <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
                 {onOpen && (
                   <button
                     type="button"
@@ -178,7 +189,10 @@ return () => {
 
       {/* meta */}
       <div className="mt-1 flex flex-col gap-1">
-        <div className="truncate text-sm font-medium text-slate-900" title={file.name}>
+        <div
+          className="truncate text-sm font-medium text-slate-900"
+          title={file.name}
+        >
           {file.name}
         </div>
 
@@ -187,7 +201,12 @@ return () => {
             type="button"
             onClick={() => {
               if (onOpen) onOpen();
-              else window.open(file.preview_link!, "_blank", "noopener,noreferrer");
+              else
+                window.open(
+                  file.preview_link!,
+                  "_blank",
+                  "noopener,noreferrer"
+                );
             }}
             className="self-start text-[11px] font-medium text-emerald-600 underline"
           >
@@ -198,7 +217,7 @@ return () => {
 
       {/* kebab */}
       {canManage && (
-        <div ref={menuRef} className="absolute right-3 top-3 z-20">
+        <div ref={menuRef} className="absolute right-3 top-3 z-10">
           <button
             type="button"
             onClick={(e) => {
@@ -211,7 +230,7 @@ return () => {
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
+            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
               {onOpen && (
                 <button
                   type="button"
