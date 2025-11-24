@@ -38,19 +38,21 @@ export default function FileCard({
 
   // ---------------- CLICK OUTSIDE TO CLOSE ----------------
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    if (menuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      document.addEventListener("touchstart", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
-    };
+function handleClickOutside(e: Event) {
+  if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+    setMenuOpen(false);
+  }
+}
+
+if (menuOpen) {
+  document.addEventListener("mousedown", handleClickOutside);
+  document.addEventListener("touchstart", handleClickOutside);
+}
+
+return () => {
+  document.removeEventListener("mousedown", handleClickOutside);
+  document.removeEventListener("touchstart", handleClickOutside);
+};
   }, [menuOpen]);
 
   // ---------------------------------------------------------
