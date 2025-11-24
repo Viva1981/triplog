@@ -165,37 +165,38 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           </div>
         ) : (
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-            {docFiles.map((file, index) => {
-              const canManage =
-                !!currentUserId &&
-                !!file.user_id &&
-                file.user_id === currentUserId;
+{docFiles.map((file, index) => {
+  const canManage =
+    !!currentUserId &&
+    !!file.user_id &&
+    file.user_id === currentUserId;
 
-              return
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  canManage={canManage}
-                  onPreviewClick={() => openLightbox(index)}
-                  onOpen={() => {
-                    if (file.preview_link) {
-                      window.open(
-                        file.preview_link,
-                        "_blank",
-                        "noopener,noreferrer"
-                      );
-                    }
-                  }}
-                  onRename={() => handleRenameFile(file)}
-                  onDelete={() =>
-                    handleDeleteFile(
-                      file.id,
-                      "document",
-                      file.drive_file_id
-                    )
-                  }
-                />;
-            })}
+  return (
+    <FileCard
+      key={file.id}
+      file={file}
+      canManage={canManage}
+      onPreviewClick={() => openLightbox(index)}
+      onOpen={() => {
+        if (file.preview_link) {
+          window.open(
+            file.preview_link,
+            "_blank",
+            "noopener,noreferrer"
+          );
+        }
+      }}
+      onRename={() => handleRenameFile(file)}
+      onDelete={() =>
+        handleDeleteFile(
+          file.id,
+          "document",
+          file.drive_file_id
+        )
+      }
+    />
+  );
+})}
           </div>
         )}
       </section>
