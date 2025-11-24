@@ -135,7 +135,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
             </h2>
             <p className="text-xs text-slate-500">
               Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
-              automatikusan elmenti őket az utazás Google Drive mappájába.
+              automatikusan elmenti az utazás Google Drive mappájába.
             </p>
             {photoFiles.length > 0 && (
               <p className="mt-1 text-[11px] text-slate-400">

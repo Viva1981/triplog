@@ -134,7 +134,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               Dokumentumok
             </h2>
             <p className="text-xs text-slate-500">
-              Foglalások, beszállókártyák, jegyek és más fontos dokumentumok – töltsd fel őket közvetlenül az eszközödről, mi elmentjük az utazás Google Drive mappájába.
+              Foglalások, beszállókártyák, jegyek és más fontos dokumentumok – töltsd fel közvetlenül az eszközödről – a TripLog automatikusan elmenti az utazás Google Drive mappájába.
             </p>
             {docFiles.length > 0 && (
               <p className="mt-1 text-[11px] text-slate-400">
