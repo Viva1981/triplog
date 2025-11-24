@@ -47,6 +47,8 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
   currentUserId,
 }) => {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const [lastTap, setLastTap] = useState<number | null>(null);
 
   const handlePhotoChange = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -60,29 +62,50 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
   const openLightbox = (index: number) => {
     if (photoFiles.length === 0) return;
     setLightboxIndex(index);
+    setIsZoomed(false);
   };
 
-  const closeLightbox = () => setLightboxIndex(null);
+  const closeLightbox = () => {
+    setLightboxIndex(null);
+    setIsZoomed(false);
+  };
 
   const showPrev = () => {
     if (lightboxIndex === null || photoFiles.length === 0) return;
     setLightboxIndex((prev) =>
-      prev === 0 ? photoFiles.length - 1 : prev! - 1
+      prev === 0 ? photoFiles.length - 1 : (prev as number) - 1
     );
+    setIsZoomed(false);
   };
 
   const showNext = () => {
     if (lightboxIndex === null || photoFiles.length === 0) return;
     setLightboxIndex((prev) =>
-      prev === photoFiles.length - 1 ? 0 : prev! + 1
+      prev === photoFiles.length - 1 ? 0 : (prev as number) + 1
     );
+    setIsZoomed(false);
   };
 
-  // Swipe handler
+  // Swipe handler – csak akkor lapozunk, ha NEM zoomolt a kép
   const handleDragEnd = (_: any, info: PanInfo) => {
+    if (isZoomed) return;
+
     const threshold = 80;
     if (info.offset.x > threshold) showPrev();
     else if (info.offset.x < -threshold) showNext();
+  };
+
+  // Dupla tap / dupla katt → zoom in / out
+  const handleImageTap = (
+    e: React.MouseEvent<HTMLImageElement> | React.TouchEvent<HTMLImageElement>
+  ) => {
+    e.stopPropagation();
+    const now = Date.now();
+    if (lastTap && now - lastTap < 300) {
+      // dupla tap
+      setIsZoomed((z) => !z);
+    }
+    setLastTap(now);
   };
 
   const currentPhoto =
@@ -93,7 +116,9 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Fotók</h2>
+            <h2 className="text-base font-semibold text-slate-900">
+              Fotók
+            </h2>
             <p className="text-xs text-slate-500">
               Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
               automatikusan elmenti őket az utazás Google Drive mappájába.
@@ -144,37 +169,37 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
             Még nincs fotó ehhez az utazáshoz.
           </div>
         ) : (
-          <>
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              {photoFiles.map((file, index) => {
-                const canManage =
-                  currentUserId === file.user_id;
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            {photoFiles.map((file, index) => {
+              const canManage =
+                !!currentUserId &&
+                !!file.user_id &&
+                file.user_id === currentUserId;
 
-                return (
-                  <FileCard
-                    key={file.id}
-                    file={file}
-                    canManage={canManage}
-                    onPreviewClick={() => openLightbox(index)}
-                    onRename={() => handleRenameFile(file)}
-                    onDelete={() =>
-                      handleDeleteFile(
-                        file.id,
-                        "photo",
-                        file.drive_file_id
-                      )
-                    }
-                  />
-                );
-              })}
-            </div>
-          </>
+              return
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  canManage={canManage}
+                  onPreviewClick={() => openLightbox(index)}
+                  onRename={() => handleRenameFile(file)}
+                  onDelete={() =>
+                    handleDeleteFile(
+                      file.id,
+                      "photo",
+                      file.drive_file_id
+                    )
+                  }
+                />;
+            })}
+          </div>
         )}
       </section>
 
-      {/* LIGHTBOX — UGYANAZ, mint Dokumentumok, csak swipe-pal */}
+      {/* LIGHTBOX – swipe + dupla tap zoom */}
       {currentPhoto && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-3">
+          {/* háttér – kattintásra zár */}
           <button
             type="button"
             onClick={closeLightbox}
@@ -182,6 +207,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
           />
 
           <div className="relative z-50 max-h-[90vh] w-full max-w-3xl rounded-2xl bg-black/80 p-3 md:p-4">
+            {/* bezárás gomb desktopon */}
             <button
               type="button"
               onClick={closeLightbox}
@@ -191,6 +217,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
             </button>
 
             <div className="flex items-center justify-between gap-2">
+              {/* balra nyíl desktopon */}
               <button
                 type="button"
                 onClick={showPrev}
@@ -199,21 +226,28 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
                 ◀
               </button>
 
+              {/* swipe + zoom area */}
               <motion.div
-                className="flex-1"
-                drag="x"
+                className="flex-1 flex items-center justify-center"
+                drag={isZoomed ? false : "x"}
                 dragConstraints={{ left: 0, right: 0 }}
                 dragElastic={0.2}
                 onDragEnd={handleDragEnd}
               >
-                <img
+                <motion.img
                   src={getPhotoLightboxSrc(currentPhoto)}
                   alt={currentPhoto.name}
                   referrerPolicy="no-referrer"
-                  className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain"
+                  className="max-h-[70vh] w-auto rounded-xl object-contain"
+                  style={{ scale: isZoomed ? 2 : 1, cursor: isZoomed ? "grab" : "auto" }}
+                  drag={isZoomed}
+                  dragMomentum={false}
+                  onClick={handleImageTap}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
                 />
 
-                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-200">
+                <div className="absolute bottom-3 left-0 right-0 flex items-center justify-between px-4 text-[11px] text-slate-200">
                   <span className="truncate pr-2">{currentPhoto.name}</span>
                   <span>
                     {lightboxIndex! + 1} / {photoFiles.length}
@@ -221,6 +255,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
                 </div>
               </motion.div>
 
+              {/* jobbra nyíl desktopon */}
               <button
                 type="button"
                 onClick={showNext}
