@@ -25,22 +25,12 @@ type PhotosSectionProps = {
   currentUserId?: string | null;
 };
 
-// 👉 Lightbox nagy kép – STABIL thumbnail logika
-function getLightboxImageSrc(file: TripFile): string {
+// Lightbox kép URL – stabil Drive thumb
+function getPhotoLightboxSrc(file: TripFile): string {
   if (file.drive_file_id) {
     return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
   }
-
-  if (file.thumbnail_link) {
-    let url = file.thumbnail_link;
-
-    if (url.includes("googleusercontent.com")) {
-      url = url.replace(/=s\\d+(-c)?/, "=s1600");
-    }
-
-    return url;
-  }
-
+  if (file.thumbnail_link) return file.thumbnail_link;
   return file.preview_link || "";
 }
 
@@ -58,20 +48,14 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
 }) => {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-const handlePhotoChange = async (
-  event: React.ChangeEvent<HTMLInputElement>
-) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  await uploadFileToDriveAndSave("photo", file);
-  event.target.value = "";
-};
-
-  const hasOtherUploader =
-    !!currentUserId &&
-    photoFiles.some(
-      (file) => file.user_id && file.user_id !== currentUserId
-    );
+  const handlePhotoChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await uploadFileToDriveAndSave("photo", file);
+    event.target.value = "";
+  };
 
   const openLightbox = (index: number) => {
     if (photoFiles.length === 0) return;
@@ -83,46 +67,33 @@ const handlePhotoChange = async (
   const showPrev = () => {
     if (lightboxIndex === null || photoFiles.length === 0) return;
     setLightboxIndex((prev) =>
-      prev === null
-        ? null
-        : prev === 0
-        ? photoFiles.length - 1
-        : prev - 1
+      prev === 0 ? photoFiles.length - 1 : prev! - 1
     );
   };
 
   const showNext = () => {
     if (lightboxIndex === null || photoFiles.length === 0) return;
     setLightboxIndex((prev) =>
-      prev === null
-        ? null
-        : prev === photoFiles.length - 1
-        ? 0
-        : prev + 1
+      prev === photoFiles.length - 1 ? 0 : prev! + 1
     );
+  };
+
+  // Swipe handler
+  const handleDragEnd = (_: any, info: PanInfo) => {
+    const threshold = 80;
+    if (info.offset.x > threshold) showPrev();
+    else if (info.offset.x < -threshold) showNext();
   };
 
   const currentPhoto =
     lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
-
-  const handleDragEnd = (
-    _: MouseEvent | TouchEvent | PointerEvent,
-    info: PanInfo
-  ) => {
-    const threshold = 80;
-
-    if (info.offset.x > threshold) showPrev();
-    else if (info.offset.x < -threshold) showNext();
-  };
 
   return (
     <>
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              Fotók
-            </h2>
+            <h2 className="text-base font-semibold text-slate-900">Fotók</h2>
             <p className="text-xs text-slate-500">
               Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
               automatikusan elmenti őket az utazás Google Drive mappájába.
@@ -170,16 +141,14 @@ const handlePhotoChange = async (
           </div>
         ) : photoFiles.length === 0 ? (
           <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
-            Még nincs fotó.
+            Még nincs fotó ehhez az utazáshoz.
           </div>
         ) : (
           <>
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
               {photoFiles.map((file, index) => {
                 const canManage =
-                  !!currentUserId &&
-                  !!file.user_id &&
-                  file.user_id === currentUserId;
+                  currentUserId === file.user_id;
 
                 return (
                   <FileCard
@@ -199,23 +168,17 @@ const handlePhotoChange = async (
                 );
               })}
             </div>
-
-            {hasOtherUploader && (
-              <p className="mt-3 text-[11px] leading-snug text-slate-500">
-                Csak az általad feltöltött fotókat tudod átnevezni vagy
-                törölni. A többiek képei Drive jogosultságtól függnek.
-              </p>
-            )}
           </>
         )}
       </section>
 
+      {/* LIGHTBOX — UGYANAZ, mint Dokumentumok, csak swipe-pal */}
       {currentPhoto && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-3">
           <button
             type="button"
             onClick={closeLightbox}
-            className="absolute inset-0 h-full w-full cursor-default"
+            className="absolute inset-0"
           />
 
           <div className="relative z-50 max-h-[90vh] w-full max-w-3xl rounded-2xl bg-black/80 p-3 md:p-4">
@@ -231,7 +194,7 @@ const handlePhotoChange = async (
               <button
                 type="button"
                 onClick={showPrev}
-                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-slate-100 hover:bg-black md:flex"
+                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white hover:bg-black md:flex"
               >
                 ◀
               </button>
@@ -244,16 +207,14 @@ const handlePhotoChange = async (
                 onDragEnd={handleDragEnd}
               >
                 <img
-                  src={getLightboxImageSrc(currentPhoto)}
+                  src={getPhotoLightboxSrc(currentPhoto)}
                   alt={currentPhoto.name}
                   referrerPolicy="no-referrer"
                   className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain"
                 />
 
-                <div className="mt-2 hidden items-center justify-between text-[11px] text-slate-200 md:flex">
-                  <span className="truncate pr-2">
-                    {currentPhoto.name}
-                  </span>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-200">
+                  <span className="truncate pr-2">{currentPhoto.name}</span>
                   <span>
                     {lightboxIndex! + 1} / {photoFiles.length}
                   </span>
@@ -263,7 +224,7 @@ const handlePhotoChange = async (
               <button
                 type="button"
                 onClick={showNext}
-                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-slate-100 hover:bg-black md:flex"
+                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white hover:bg-black md:flex"
               >
                 ▶
               </button>

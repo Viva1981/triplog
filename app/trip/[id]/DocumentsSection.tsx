@@ -3,8 +3,17 @@
 import React, { useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
+import { motion, PanInfo } from "framer-motion";
 
-type DocumentsSectionProps = {
+// Lightbox kép doksikhoz
+function getDocumentLightboxSrc(file: TripFile): string {
+  if (file.drive_file_id)
+    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
+  if (file.thumbnail_link) return file.thumbnail_link;
+  return file.preview_link || "";
+}
+
+type Props = {
   docFiles: TripFile[];
   loadingFiles: boolean;
   filesError: string | null;
@@ -15,27 +24,16 @@ type DocumentsSectionProps = {
     type: "photo" | "document",
     file: File
   ) => Promise<void> | void;
-  handleRenameFile: (file: TripFile) => Promise<void> | void;
+  handleRenameFile: (file: TripFile) => Promise<void>;
   handleDeleteFile: (
     fileId: string,
     type: "photo" | "document",
     driveFileId?: string
-  ) => Promise<void> | void;
+  ) => Promise<void>;
   currentUserId?: string | null;
 };
 
-// Lightbox kép URL doksikhoz – első oldal / preview
-function getDocumentLightboxSrc(file: TripFile): string {
-  if (file.drive_file_id) {
-    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
-  }
-  if (file.thumbnail_link) {
-    return file.thumbnail_link;
-  }
-  return file.preview_link || "";
-}
-
-const DocumentsSection: React.FC<DocumentsSectionProps> = ({
+export default function DocumentsSection({
   docFiles,
   loadingFiles,
   filesError,
@@ -46,65 +44,51 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   handleRenameFile,
   handleDeleteFile,
   currentUserId,
-}) => {
+}: Props) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const handleDocChange = async (
-    event: React.ChangeEvent<HTMLInputElement>
+    e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = event.target.files?.[0];
+    const file = e.target.files?.[0];
     if (!file) return;
     await uploadFileToDriveAndSave("document", file);
-    event.target.value = "";
+    e.target.value = "";
   };
 
-  const hasOtherUploader =
-    !!currentUserId &&
-    docFiles.some(
-      (file) => file.user_id && file.user_id !== currentUserId
-    );
-
-  const openLightbox = (index: number) => {
-    if (docFiles.length === 0) return;
-    setLightboxIndex(index);
-  };
-
+  const openLightbox = (i: number) => setLightboxIndex(i);
   const closeLightbox = () => setLightboxIndex(null);
 
-  const showPrev = () => {
-    if (lightboxIndex === null || docFiles.length === 0) return;
-    setLightboxIndex((prev) =>
-      prev === null ? null : prev === 0 ? docFiles.length - 1 : prev - 1
+  const showPrev = () =>
+    setLightboxIndex((i) =>
+      i === 0 ? docFiles.length - 1 : (i as number) - 1
     );
+
+  const showNext = () =>
+    setLightboxIndex((i) =>
+      i === docFiles.length - 1 ? 0 : (i as number) + 1
+    );
+
+  // Swipe handler
+  const handleDragEnd = (_: any, info: PanInfo) => {
+    const t = 80;
+    if (info.offset.x > t) showPrev();
+    else if (info.offset.x < -t) showNext();
   };
 
-  const showNext = () => {
-    if (lightboxIndex === null || docFiles.length === 0) return;
-    setLightboxIndex((prev) =>
-      prev === null
-        ? null
-        : prev === docFiles.length - 1
-        ? 0
-        : prev + 1
-    );
-  };
-
-  const currentDoc =
+  const current =
     lightboxIndex !== null ? docFiles[lightboxIndex] : null;
 
   return (
     <>
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
-        {/* Fejléc */}
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900">
               Dokumentumok
             </h2>
             <p className="text-xs text-slate-500">
-              Foglalások, beszállókártyák, jegyek és más fontos
-              dokumentumok – töltsd fel őket közvetlenül az eszközödről,
-              mi elmentjük az utazás Google Drive mappájába.
+              Foglalások, beszállókártyák, jegyek, számlák…
             </p>
             {docFiles.length > 0 && (
               <p className="mt-1 text-[11px] text-slate-400">
@@ -124,7 +108,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           </label>
         </div>
 
-        {/* státusz üzenetek */}
         {docError && (
           <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
             {docError}
@@ -135,47 +118,36 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             {docSuccess}
           </div>
         )}
-        {filesError && (
-          <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-            {filesError}
-          </div>
-        )}
 
-        {/* lista / állapot */}
         {loadingFiles ? (
           <div className="mt-4 text-xs text-slate-500">
-            Dokumentumok betöltése...
+            Betöltés…
           </div>
         ) : docFiles.length === 0 ? (
           <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
-            Még nincs dokumentum ehhez az utazáshoz.
+            Még nincs dokumentum.
           </div>
         ) : (
           <>
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              {docFiles.map((file, index) => {
+              {docFiles.map((file, i) => {
                 const canManage =
-                  !!currentUserId &&
-                  !!file.user_id &&
-                  file.user_id === currentUserId;
+                  currentUserId === file.user_id;
 
                 return (
                   <FileCard
                     key={file.id}
                     file={file}
                     canManage={canManage}
-                    // Thumb-ra kattintás: lightbox galéria
-                    onPreviewClick={() => openLightbox(index)}
-                    // Kebab "Megnyitás"
-                    onOpen={() => {
-                      if (file.preview_link) {
-                        window.open(
-                          file.preview_link,
-                          "_blank",
-                          "noopener,noreferrer"
-                        );
-                      }
-                    }}
+                    onPreviewClick={() => openLightbox(i)}
+                    onOpen={() =>
+                      file.preview_link &&
+                      window.open(
+                        file.preview_link,
+                        "_blank",
+                        "noopener,noreferrer"
+                      )
+                    }
                     onRename={() => handleRenameFile(file)}
                     onDelete={() =>
                       handleDeleteFile(
@@ -188,32 +160,24 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 );
               })}
             </div>
-
-            {hasOtherUploader && (
-              <p className="mt-3 text-[11px] leading-snug text-slate-500">
-                Csak az általad feltöltött dokumentumokat tudod átnevezni
-                vagy törölni az alkalmazásból. A többiek által feltöltött
-                fájlok kezelése a Google Drive jogosultságaitól függ.
-              </p>
-            )}
           </>
         )}
       </section>
 
-      {/* LIGHTBOX / GALÉRIA DOKSIKHOZ */}
-      {currentDoc && (
+      {/* LIGHTBOX — ugyanaz, mint a fotók + swipe */}
+      {current && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-3">
           <button
             type="button"
             onClick={closeLightbox}
-            className="absolute inset-0 h-full w-full cursor-default"
+            className="absolute inset-0"
           />
 
           <div className="relative z-50 max-h-[90vh] w-full max-w-3xl rounded-2xl bg-black/80 p-3 md:p-4">
             <button
               type="button"
               onClick={closeLightbox}
-              className="absolute right-3 top-3 hidden rounded-full bg-black/60 px-2 py-1 text-xs text-slate-100 hover:bg-black md:inline-flex"
+              className="absolute right-3 top-3 hidden rounded-full bg-black/60 px-2 py-1 text-xs text-slate-100 md:inline-flex"
             >
               Bezárás
             </button>
@@ -222,33 +186,37 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               <button
                 type="button"
                 onClick={showPrev}
-                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-slate-100 hover:bg-black md:flex"
+                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white md:flex"
               >
                 ◀
               </button>
 
-              <div className="flex-1">
+              <motion.div
+                className="flex-1"
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.2}
+                onDragEnd={handleDragEnd}
+              >
                 <img
-                  src={getDocumentLightboxSrc(currentDoc)}
-                  alt={currentDoc.name}
+                  src={getDocumentLightboxSrc(current)}
+                  alt={current.name}
                   referrerPolicy="no-referrer"
                   className="mx-auto max-h-[70vh] w-auto rounded-xl object-contain bg-white/5"
                 />
 
                 <div className="mt-2 flex items-center justify-between text-[11px] text-slate-200">
-                  <span className="truncate pr-2">
-                    {currentDoc.name}
-                  </span>
+                  <span className="truncate pr-2">{current.name}</span>
                   <span>
                     {lightboxIndex! + 1} / {docFiles.length}
                   </span>
                 </div>
-              </div>
+              </motion.div>
 
               <button
                 type="button"
                 onClick={showNext}
-                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-slate-100 hover:bg-black md:flex"
+                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white md:flex"
               >
                 ▶
               </button>
@@ -258,6 +226,4 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       )}
     </>
   );
-};
-
-export default DocumentsSection;
+}
