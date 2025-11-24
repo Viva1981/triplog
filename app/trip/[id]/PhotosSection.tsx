@@ -258,6 +258,11 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
                   style={{ scale: isZoomed ? 2 : 1 }}
                   animate={controls}
                   drag={isZoomed}
+                  dragConstraints={
+                    isZoomed
+                      ? { left: -120, right: 120, top: -120, bottom: 120 }
+                      : undefined
+                  }
                   dragMomentum={false}
                   onClick={handleImageTap}
                 />
