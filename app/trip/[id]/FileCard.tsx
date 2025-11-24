@@ -35,14 +35,14 @@ export default function FileCard({
       ? `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w400`
       : file.thumbnail_link || file.preview_link || undefined;
 
-  // 🔵 KÜLÖN LAYOUT FOTÓKRA: a teljes kártya egy kép, nincs név alul
+  // 🔵 FOTÓ LAYOUT – teljes kártya kép, a menü szabadon kilóghat
   if (isPhoto) {
     return (
-      <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md overflow-hidden">
+      <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
         <button
           type="button"
           onClick={onPreviewClick}
-          className="block h-40 w-full sm:h-48 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="block h-40 w-full overflow-hidden rounded-2xl sm:h-48 focus:outline-none focus:ring-2 focus:ring-emerald-500"
         >
           {thumbSrc ? (
             <img
@@ -59,21 +59,25 @@ export default function FileCard({
 
         {/* Kebab menü – csak a feltöltőnek */}
         {canManage && (
-          <div className="absolute right-2 top-2">
+          <div className="absolute right-2 top-2 z-20">
             <button
               type="button"
-              onClick={() => setMenuOpen((prev) => !prev)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((prev) => !prev);
+              }}
               className="rounded-full bg-black/60 p-1 text-white shadow-sm hover:bg-black"
             >
               <span className="text-lg leading-none">⋮</span>
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
+              <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
                 {onOpen && (
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setMenuOpen(false);
                       onOpen();
                     }}
@@ -85,7 +89,8 @@ export default function FileCard({
 
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setMenuOpen(false);
                     onRename();
                   }}
@@ -96,7 +101,8 @@ export default function FileCard({
 
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setMenuOpen(false);
                     onDelete();
                   }}
@@ -112,7 +118,7 @@ export default function FileCard({
     );
   }
 
-  // 🟠 DOKSI LAYOUT – marad, csak dokumentumoknál használjuk
+  // 🟠 DOKSI LAYOUT – marad a régi, név + ikon + "Megnyitás Drive-ban"
   return (
     <div className="group relative flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
       <div className="flex h-32 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100">
@@ -127,7 +133,7 @@ export default function FileCard({
           {file.name}
         </div>
 
-        {!isPhoto && file.preview_link && (
+        {file.preview_link && (
           <a
             href={file.preview_link}
             target="_blank"
