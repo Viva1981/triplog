@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
-import { motion, PanInfo } from "framer-motion";
+import { motion, PanInfo, useAnimation } from "framer-motion";
 
 type DocumentsSectionProps = {
   docFiles: TripFile[];
@@ -50,6 +50,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   const [isZoomed, setIsZoomed] = useState(false);
   const [lastTap, setLastTap] = useState<number | null>(null);
 
+  const controls = useAnimation();
+
+  const resetPosition = async () => {
+    await controls.start({ x: 0, y: 0, transition: { duration: 0.15 } });
+  };
+
   const handleDocChange = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -63,11 +69,13 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     if (docFiles.length === 0) return;
     setLightboxIndex(index);
     setIsZoomed(false);
+    resetPosition();
   };
 
   const closeLightbox = () => {
     setLightboxIndex(null);
     setIsZoomed(false);
+    resetPosition();
   };
 
   const showPrev = () => {
@@ -76,6 +84,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       prev === 0 ? docFiles.length - 1 : (prev as number) - 1
     );
     setIsZoomed(false);
+    resetPosition();
   };
 
   const showNext = () => {
@@ -84,8 +93,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       prev === docFiles.length - 1 ? 0 : (prev as number) + 1
     );
     setIsZoomed(false);
+    resetPosition();
   };
 
+  // Swipe csak zoomolatlan állapotban
   const handleDragEnd = (_: any, info: PanInfo) => {
     if (isZoomed) return;
 
@@ -94,22 +105,28 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     else if (info.offset.x < -threshold) showNext();
   };
 
-  const handleImageTap = (
-    e: React.MouseEvent<HTMLImageElement> | React.TouchEvent<HTMLImageElement>
-  ) => {
-    e.stopPropagation();
+  // Dupla tap → zoom in/out
+  const handleImageTap = () => {
     const now = Date.now();
+
     if (lastTap && now - lastTap < 300) {
-      setIsZoomed((z) => !z);
+      const nextZoom = !isZoomed;
+      setIsZoomed(nextZoom);
+      if (!nextZoom) {
+        // zoom ki → pozíció reset
+        resetPosition();
+      }
     }
+
     setLastTap(now);
   };
 
-  const currentDoc =
+  const current =
     lightboxIndex !== null ? docFiles[lightboxIndex] : null;
 
   return (
     <>
+      {/* GRID SZEKCIÓ */}
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -117,9 +134,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               Dokumentumok
             </h2>
             <p className="text-xs text-slate-500">
-              Foglalások, beszállókártyák, jegyek és más fontos
-              dokumentumok – töltsd fel őket közvetlenül az eszközödről,
-              mi elmentjük az utazás Google Drive mappájába.
+              Foglalások, beszállókártyák, jegyek és más fontos dokumentumok – töltsd fel őket közvetlenül az eszközödről, mi elmentjük az utazás Google Drive mappájába.
             </p>
             {docFiles.length > 0 && (
               <p className="mt-1 text-[11px] text-slate-400">
@@ -144,11 +159,13 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             {docError}
           </div>
         )}
+
         {docSuccess && (
           <div className="mb-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
             {docSuccess}
           </div>
         )}
+
         {filesError && (
           <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
             {filesError}
@@ -165,52 +182,54 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           </div>
         ) : (
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-{docFiles.map((file, index) => {
-  const canManage =
-    !!currentUserId &&
-    !!file.user_id &&
-    file.user_id === currentUserId;
+            {docFiles.map((file, index) => {
+              const canManage =
+                !!currentUserId &&
+                !!file.user_id &&
+                file.user_id === currentUserId;
 
-  return (
-    <FileCard
-      key={file.id}
-      file={file}
-      canManage={canManage}
-      onPreviewClick={() => openLightbox(index)}
-      onOpen={() => {
-        if (file.preview_link) {
-          window.open(
-            file.preview_link,
-            "_blank",
-            "noopener,noreferrer"
-          );
-        }
-      }}
-      onRename={() => handleRenameFile(file)}
-      onDelete={() =>
-        handleDeleteFile(
-          file.id,
-          "document",
-          file.drive_file_id
-        )
-      }
-    />
-  );
-})}
+              return (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  canManage={canManage}
+                  onPreviewClick={() => openLightbox(index)}
+                  onOpen={() => {
+                    if (file.preview_link) {
+                      window.open(
+                        file.preview_link,
+                        "_blank",
+                        "noopener,noreferrer"
+                      );
+                    }
+                  }}
+                  onRename={() => handleRenameFile(file)}
+                  onDelete={() =>
+                    handleDeleteFile(
+                      file.id,
+                      "document",
+                      file.drive_file_id
+                    )
+                  }
+                />
+              );
+            })}
           </div>
         )}
       </section>
 
-      {/* LIGHTBOX – swipe + dupla tap zoom */}
-      {currentDoc && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-3">
+      {/* LIGHTBOX */}
+      {current && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-3">
+          {/* háttérre kattintva zár */}
           <button
             type="button"
             onClick={closeLightbox}
             className="absolute inset-0"
           />
 
-          <div className="relative z-50 max-h-[90vh] w-full max-w-3xl rounded-2xl bg-black/80 p-3 md:p-4">
+          <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
+            {/* bezárás gomb desktopon */}
             <button
               type="button"
               onClick={closeLightbox}
@@ -219,7 +238,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               Bezárás
             </button>
 
-            <div className="flex items-center justify-between gap-2">
+            <div className="relative flex items-center justify-between">
+              {/* balra nyíl (desktop) */}
               <button
                 type="button"
                 onClick={showPrev}
@@ -228,34 +248,34 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 ◀
               </button>
 
+              {/* kép area – swipe / pan / zoom */}
               <motion.div
-                className="flex-1 flex items-center justify-center"
+                className="relative flex flex-1 items-center justify-center"
                 drag={isZoomed ? false : "x"}
                 dragConstraints={{ left: 0, right: 0 }}
                 dragElastic={0.2}
                 onDragEnd={handleDragEnd}
               >
                 <motion.img
-                  src={getDocumentLightboxSrc(currentDoc)}
-                  alt={currentDoc.name}
+                  key={current.id}
+                  src={getDocumentLightboxSrc(current)}
+                  alt={current.name}
                   referrerPolicy="no-referrer"
                   className="max-h-[70vh] w-auto rounded-xl object-contain bg-white/5"
-                  style={{ scale: isZoomed ? 2 : 1, cursor: isZoomed ? "grab" : "auto" }}
+                  style={{ scale: isZoomed ? 2 : 1 }}
+                  animate={controls}
                   drag={isZoomed}
+                  dragConstraints={
+                    isZoomed
+                      ? { left: -120, right: 120, top: -120, bottom: 120 }
+                      : undefined
+                  }
                   dragMomentum={false}
                   onClick={handleImageTap}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
                 />
-
-                <div className="absolute bottom-3 left-0 right-0 flex items-center justify-between px-4 text-[11px] text-slate-200">
-                  <span className="truncate pr-2">{currentDoc.name}</span>
-                  <span>
-                    {lightboxIndex! + 1} / {docFiles.length}
-                  </span>
-                </div>
               </motion.div>
 
+              {/* jobbra nyíl (desktop) */}
               <button
                 type="button"
                 onClick={showNext}
@@ -264,6 +284,16 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 ▶
               </button>
             </div>
+
+            {/* HUD – csak ha nincs zoom */}
+            {!isZoomed && (
+              <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex items-center justify-between px-4 text-[11px] text-slate-200">
+                <span className="truncate pr-2">{current.name}</span>
+                <span>
+                  {lightboxIndex! + 1} / {docFiles.length}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
