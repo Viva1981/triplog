@@ -1,18 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { TripFile } from "@/lib/trip/types";
+import { useState, useRef, useEffect } from "react";
+import type { TripFile } from "@/lib/trip/types";
 import { getFileIcon } from "@/lib/trip/fileIcons";
 
 interface FileCardProps {
   file: TripFile;
-  /** Csak az kezelheti (átnevezés, törlés), aki feltöltötte. */
   canManage: boolean;
   onRename: () => void;
   onDelete: () => void;
-  /** Dokumentumoknál opcionális "Megnyitás" akció (Drive-ban) vagy fotóknál lightbox nyitás. */
   onOpen?: () => void;
-  /** Ha meg van adva, a thumbnail-re kattintás ezt hívja (fotók/doksik lightbox-hoz). */
   onPreviewClick?: () => void;
 }
 
@@ -25,10 +22,11 @@ export default function FileCard({
   onPreviewClick,
 }: FileCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const isPhoto = file.type === "photo";
 
-  // Stabil thumb mindenre (Drive ID-t preferáljuk)
+  // Stabil thumbnail előnyben: Drive file ID → stabil URL
   const stableThumb = file.drive_file_id
     ? `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w400`
     : undefined;
@@ -38,12 +36,31 @@ export default function FileCard({
     file.thumbnail_link ||
     (isPhoto ? file.preview_link || undefined : undefined);
 
-  // ---------------------------------------------------------------------------
-  // FOTÓ KÁRTYA – gyakorlatilag a régi layout, csak minimális igazítás
-  // ---------------------------------------------------------------------------
+  // ---------------- CLICK OUTSIDE TO CLOSE ----------------
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    if (menuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [menuOpen]);
+
+  // ---------------------------------------------------------
+  // ---------------------- PHOTO CARD -----------------------
+  // ---------------------------------------------------------
+
   if (isPhoto) {
     return (
       <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
+        {/* clickable image */}
         <button
           type="button"
           onClick={onPreviewClick}
@@ -63,27 +80,28 @@ export default function FileCard({
           )}
         </button>
 
-        {/* Kebab menü – csak a feltöltőnek */}
+        {/* KEBAB MENU – unified with document card */}
         {canManage && (
-          <div className="absolute right-2 top-2 z-20">
+          <div ref={menuRef} className="absolute right-2 top-2 z-20">
+            {/* kebab button */}
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 setMenuOpen((prev) => !prev);
               }}
-              className="rounded-full bg-black/60 p-1 text-white shadow-sm hover:bg-black"
+              className="rounded-full bg-white/90 p-1 shadow-sm hover:bg-slate-100"
             >
-              <span className="text-lg leading-none">⋮</span>
+              <span className="text-xl leading-none">⋮</span>
             </button>
 
+            {/* menu panel */}
             {menuOpen && (
               <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
                 {onOpen && (
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={() => {
                       setMenuOpen(false);
                       onOpen();
                     }}
@@ -95,8 +113,7 @@ export default function FileCard({
 
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={() => {
                     setMenuOpen(false);
                     onRename();
                   }}
@@ -107,8 +124,7 @@ export default function FileCard({
 
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={() => {
                     setMenuOpen(false);
                     onDelete();
                   }}
@@ -124,12 +140,13 @@ export default function FileCard({
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // DOKUMENTUM KÁRTYA – modernebb preview + név + Drive link
-  // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------
+  // ------------------ DOCUMENT CARD ------------------------
+  // ---------------------------------------------------------
 
   const hasThumb = !!thumbSrc;
-  const docPreviewInner = hasThumb ? (
+
+  const docPreviewContent = hasThumb ? (
     <img
       src={thumbSrc}
       alt={file.name}
@@ -142,76 +159,61 @@ export default function FileCard({
     </div>
   );
 
-  const docPreview = onPreviewClick ? (
+  const docPreview = (
     <button
       type="button"
       onClick={onPreviewClick}
       className="relative flex w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
       style={{ aspectRatio: "3 / 4" }}
     >
-      {docPreviewInner}
+      {docPreviewContent}
     </button>
-  ) : (
-    <div
-      className="relative flex w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50"
-      style={{ aspectRatio: "3 / 4" }}
-    >
-      {docPreviewInner}
-    </div>
   );
 
   return (
     <div className="group relative flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
       {docPreview}
 
-      <div className="mt-1 flex flex-1 flex-col justify-between gap-1">
-        <div
-          className="truncate text-sm font-medium text-slate-900"
-          title={file.name}
-        >
+      {/* meta */}
+      <div className="mt-1 flex flex-col gap-1">
+        <div className="truncate text-sm font-medium text-slate-900" title={file.name}>
           {file.name}
         </div>
 
         {file.preview_link && (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={() => {
               if (onOpen) onOpen();
-              else
-                window.open(
-                  file.preview_link!,
-                  "_blank",
-                  "noopener,noreferrer"
-                );
+              else window.open(file.preview_link!, "_blank", "noopener,noreferrer");
             }}
-            className="mt-0.5 inline-flex items-center text-[11px] font-medium text-emerald-600 underline"
+            className="self-start text-[11px] font-medium text-emerald-600 underline"
           >
             Megnyitás Drive-ban
           </button>
         )}
       </div>
 
+      {/* kebab */}
       {canManage && (
-        <div className="absolute right-3 top-3">
+        <div ref={menuRef} className="absolute right-3 top-3 z-20">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               setMenuOpen((prev) => !prev);
             }}
-            className="rounded-full bg-white/80 p-1 shadow-sm hover:bg-slate-100"
+            className="rounded-full bg-white/90 p-1 shadow-sm hover:bg-slate-100"
           >
             <span className="text-xl leading-none">⋮</span>
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
+            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
               {onOpen && (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={() => {
                     setMenuOpen(false);
                     onOpen();
                   }}
@@ -223,8 +225,7 @@ export default function FileCard({
 
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={() => {
                   setMenuOpen(false);
                   onRename();
                 }}
@@ -235,8 +236,7 @@ export default function FileCard({
 
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={() => {
                   setMenuOpen(false);
                   onDelete();
                 }}
