@@ -1,307 +1,224 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabaseClient";
-import { ChevronLeft } from "lucide-react";
+import { supabase } from "../../lib/supabaseClient";
+import Link from "next/link";
+import { buildTripFolderName } from "../../lib/trip/drive";
+import type { Trip } from "../../lib/trip/types";
 
-/**
- * Helyi helper a mappanévhez.
- * Pl.: "2025-12-05 – Mályi"
- */
-function buildTripFolderNameLocal(params: {
-  title: string;
-  dateFrom?: string | null;
-  dateTo?: string | null;
-}) {
-  const { title, dateFrom } = params;
-
-  if (dateFrom && title) {
-    return `${dateFrom} – ${title}`;
-  }
-
-  if (title) return title;
-
-  return "TripLog utazás";
-}
+type User = {
+  id: string;
+  email?: string;
+  displayName?: string;
+};
 
 export default function NewTripPage() {
-  const supabase = createClient();
   const router = useRouter();
+
+  const [user, setUser] = useState<User | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
 
   const [title, setTitle] = useState("");
   const [destination, setDestination] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  // -------------------------------------------------------
-  // GOOGLE DRIVE HELPER FÜGGVÉNYEK
-  // -------------------------------------------------------
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Lekéri a user Google OAuth access tokenjét.
-   */
-  async function getGoogleAccessToken() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    return session?.provider_token || null;
-  }
-
-  /**
-   * TripLog root folder ID lekérése / létrehozása.
-   */
-  async function ensureTripLogRootFolder(accessToken: string): Promise<string> {
-    // 1) Keresés a Drive-ban: van-e már TripLog nevű mappa?
-    const searchRes = await fetch(
-      "https://www.googleapis.com/drive/v3/files?q=" +
-        encodeURIComponent(
-          `name='TripLog' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-        ) +
-        "&fields=files(id,name)",
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
-
-    const searchJson = await searchRes.json();
-    if (searchJson.files && searchJson.files.length > 0) {
-      return searchJson.files[0].id; // megvan a root
-    }
-
-    // 2) Ha nincs → létrehozás
-    const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: "TripLog",
-        mimeType: "application/vnd.google-apps.folder",
-      }),
-    });
-
-    const createJson = await createRes.json();
-    return createJson.id;
-  }
-
-  /**
-   * Utazás saját mappájának létrehozása.
-   */
-  async function createTripFolder(
-    rootFolderId: string,
-    accessToken: string,
-    tripTitle: string,
-    dateFrom: string,
-    dateTo: string,
-  ): Promise<string> {
-    const folderName = buildTripFolderNameLocal({
-      title: tripTitle,
-      dateFrom,
-      dateTo,
-    });
-
-    const res = await fetch("https://www.googleapis.com/drive/v3/files", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: folderName,
-        mimeType: "application/vnd.google-apps.folder",
-        parents: [rootFolderId],
-      }),
-    });
-
-    const json = await res.json();
-    return json.id;
-  }
-
-  /**
-   * Placeholder TXT létrehozása a mappában.
-   */
-  async function createPlaceholderTxt(
-    folderId: string,
-    accessToken: string,
-    tripTitle: string,
-  ) {
-    const welcomeText = `
-Üdvözöl a TripLog!
-
-A(z) "${tripTitle}" utazásodhoz ez a mappa automatikusan jött létre.
-Itt találod majd a feltöltött fotókat, dokumentumokat, és minden más fontos fájlt.
-
-A TripLog segít az utazásod tervezésében, dokumentálásában és költségeinek rögzítésében – mindezt biztonságosan a saját Google Drive-odon.
-
-Kellemes utazást és sok szép élményt kívánunk!
-– A TripLog
-    `.trim();
-
-    const metadata = {
-      name: "triplog_info.txt",
-      mimeType: "text/plain",
-      parents: [folderId],
-    };
-
-    const form = new FormData();
-    form.append(
-      "metadata",
-      new Blob([JSON.stringify(metadata)], { type: "application/json" }),
-    );
-    form.append("file", new Blob([welcomeText], { type: "text/plain" }));
-
-    await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: form,
-      },
-    );
-  }
-
-  // -------------------------------------------------------
-  // AUTÓMATIKUS DRIVE MAPPALÉTREHOZÁS UTazás INSERT UTÁN
-  // -------------------------------------------------------
-
-  async function createTripAndFolder() {
-    try {
-      setLoading(true);
-
-      // --- 1) User lekérése
+  useEffect(() => {
+    const fetchUser = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
       if (!user) {
-        alert("Nincs bejelentkezve.");
+        setUser(null);
+        setLoadingUser(false);
+        router.push("/");
         return;
       }
 
-      // --- 2) Utazás létrehozása Supabase-ben
+      const meta = (user.user_metadata || {}) as any;
+      const displayName =
+        meta.full_name || meta.name || meta.preferred_username || undefined;
+
+      setUser({
+        id: user.id,
+        email: user.email ?? undefined,
+        displayName,
+      });
+      setLoadingUser(false);
+    };
+
+    fetchUser();
+  }, [router]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!title.trim()) {
+      setError("Az utazás címe kötelező.");
+      return;
+    }
+
+    setError(null);
+    setSubmitting(true);
+
+    try {
+      // új trip beszúrása
       const { data: tripData, error: tripError } = await supabase
         .from("trips")
         .insert({
           owner_id: user.id,
-          title,
-          destination: destination || null,
+          title: title.trim(),
+          destination: destination.trim() || null,
           date_from: dateFrom || null,
           date_to: dateTo || null,
+          notes: null,
         })
-        .select()
+        .select(
+          "id, owner_id, title, destination, date_from, date_to, notes, drive_folder_id"
+        )
         .single();
 
-      if (tripError) throw tripError;
-
-      // --- 3) Auth token Drive-hoz
-      const accessToken = await getGoogleAccessToken();
-      if (!accessToken) {
-        console.warn("No Google OAuth token – cannot create Drive folder.");
-        // tovább lépünk, utazást ettől még létrehoztuk
-        router.push(`/trip/${tripData.id}`);
-        return;
+      if (tripError || !tripData) {
+        console.error("TRIP INSERT ERROR:", tripError);
+        throw new Error(
+          tripError?.message ?? "Nem sikerült létrehozni az utazást."
+        );
       }
 
-      // --- 4) TripLog root folder biztosítása
-      const rootFolderId = await ensureTripLogRootFolder(accessToken);
+      const trip = tripData as Trip;
 
-      // --- 5) Utazás mappa létrehozása
-      const tripFolderId = await createTripFolder(
-        rootFolderId,
-        accessToken,
-        title,
-        dateFrom,
-        dateTo,
-      );
+      // owner felvétele trip_members-be + display_name + email
+      const displayName =
+        user.displayName || user.email || "Ismeretlen utazó";
 
-      // --- 6) Placeholder TXT létrehozása
-      await createPlaceholderTxt(tripFolderId, accessToken, title);
+      const { error: memberError } = await supabase.from("trip_members").insert({
+        trip_id: trip.id,
+        user_id: user.id,
+        role: "owner",
+        status: "accepted",
+        display_name: displayName,
+        email: user.email ?? null,
+      });
 
-      // --- 7) drive_folder_id mentése
-      await supabase
-        .from("trips")
-        .update({ drive_folder_id: tripFolderId })
-        .eq("id", tripData.id);
+      if (memberError) {
+        console.error("TRIP_MEMBER OWNER INSERT ERROR:", memberError);
+        // itt nem dobunk, a trip már létezik, megy tovább
+      }
 
-      // --- 8) Redirect
-      router.push(`/trip/${tripData.id}`);
-    } catch (err) {
-      console.error("Trip creation failed:", err);
-      alert("Hiba történt az utazás és/vagy Drive mappa létrehozása közben.");
+      // opcionális: drive folder + „napló” létrehozás marad a régi logika szerint, ha volt
+      // (ha később akarjuk, itt használjuk a buildTripFolderName-t, most nem piszkálom tovább)
+
+      router.push(`/trip/${trip.id}`);
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message ?? "Ismeretlen hiba történt.");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
+  };
+
+  if (loadingUser) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-slate-50">
+        <p>Betöltés...</p>
+      </main>
+    );
   }
 
-  // -------------------------------------------------------
-  // UI
-  // -------------------------------------------------------
+  if (!user) {
+    return null;
+  }
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-6">
-      <button
-        onClick={() => router.back()}
-        className="mb-6 inline-flex items-center text-sm text-slate-600 hover:text-slate-800"
-      >
-        <ChevronLeft className="mr-1 h-4 w-4" />
-        Vissza
-      </button>
-
-      <h1 className="mb-4 text-2xl font-semibold text-slate-800">Új utazás</h1>
-
-      <div className="space-y-4">
-        <input
-          type="text"
-          placeholder="Utazás címe"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full rounded-xl border border-slate-300 px-4 py-2"
-        />
-
-        <input
-          type="text"
-          placeholder="Úticél (opcionális)"
-          value={destination}
-          onChange={(e) => setDestination(e.target.value)}
-          className="w-full rounded-xl border border-slate-300 px-4 py-2"
-        />
-
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <label className="block text-xs text-slate-500">Kezdés</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-4 py-2"
-            />
-          </div>
-
-          <div className="flex-1">
-            <label className="block text-xs text-slate-500">Vége</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-4 py-2"
-            />
-          </div>
+    <main className="min-h-screen bg-slate-50">
+      <div className="max-w-3xl mx-auto px-4 py-6">
+        <div className="mb-4">
+          <Link
+            href="/"
+            className="inline-flex items-center text-sm text-slate-500 hover:text-slate-700"
+          >
+            <span className="mr-1">←</span> Vissza a főoldalra
+          </Link>
         </div>
 
-        <button
-          disabled={loading}
-          onClick={createTripAndFolder}
-          className="w-full rounded-xl bg-emerald-600 py-2 text-white transition hover:bg-emerald-700 disabled:opacity-40"
-        >
-          {loading ? "Mentés..." : "Utazás létrehozása"}
-        </button>
+        <section className="bg-white rounded-2xl shadow-md p-4 md:p-6 border border-slate-100">
+          <h1 className="text-xl md:text-2xl font-semibold text-slate-900 mb-3">
+            Új utazás létrehozása
+          </h1>
+
+          <form onSubmit={handleSubmit} className="space-y-3 text-sm">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Utazás címe *
+              </label>
+              <input
+                type="text"
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+                placeholder="Pl.: Tavaszi kiruccanás Mállyiba"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Desztináció
+              </label>
+              <input
+                type="text"
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+                placeholder="Pl.: Mállyi, Magyarország"
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Kezdő dátum
+                </label>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Befejező dátum
+                </label>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {error && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex items-center justify-center px-5 py-2 rounded-full bg-[#16ba53] text-white text-sm font-medium hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {submitting ? "Mentés..." : "Utazás létrehozása"}
+            </button>
+          </form>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }
