@@ -187,33 +187,7 @@ export default function FileCard({
     <div className="group relative flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
       {docPreview}
 
-      {/* meta */}
-      <div className="mt-1 flex flex-col gap-1">
-        <div
-          className="truncate text-sm font-medium text-slate-900"
-          title={file.name}
-        >
-          {file.name}
-        </div>
-
-        {file.preview_link && (
-          <button
-            type="button"
-            onClick={() => {
-              if (onOpen) onOpen();
-              else
-                window.open(
-                  file.preview_link!,
-                  "_blank",
-                  "noopener,noreferrer"
-                );
-            }}
-            className="self-start text-[11px] font-medium text-emerald-600 underline"
-          >
-            Megnyitás Drive-ban
-          </button>
-        )}
-      </div>
+{/* meta blokk kiiktatva – dokumentumok fotó layoutot kapnak */}
 
       {/* kebab */}
       {canManage && (
