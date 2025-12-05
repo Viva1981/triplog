@@ -74,11 +74,11 @@ export default function FileCard({
     return (
       <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
         {/* clickable image */}
-        <button
-          type="button"
-          onClick={onPreviewClick}
-          className="block h-40 w-full overflow-hidden rounded-2xl sm:h-48 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        >
+<button
+  type="button"
+  onClick={onPreviewClick}
+  className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-auto md:aspect-square focus:outline-none focus:ring-2 focus:ring-emerald-500"
+>
           {thumbSrc ? (
             <img
               src={thumbSrc}
@@ -153,96 +153,88 @@ export default function FileCard({
     );
   }
 
-  // ---------------------------------------------------------
-  // ------------------ DOCUMENT CARD ------------------------
-  // ---------------------------------------------------------
+// ---------------------------------------------------------
+// ------------------ DOCUMENT CARD ------------------------
+// ---------------------------------------------------------
 
-  const hasThumb = !!thumbSrc;
+const hasThumb = !!thumbSrc;
 
-  const docPreviewContent = hasThumb ? (
-    <img
-      src={thumbSrc}
-      alt={file.name}
-      referrerPolicy="no-referrer"
-      className="h-full w-full object-cover"
-    />
-  ) : (
-    <div className="flex h-full w-full items-center justify-center text-slate-500">
-      {getFileIcon(file)}
-    </div>
-  );
+const docPreviewContent = hasThumb ? (
+  <img
+    src={thumbSrc}
+    alt={file.name}
+    referrerPolicy="no-referrer"
+    className="h-full w-full object-cover"
+  />
+) : (
+  <div className="flex h-full w-full items-center justify-center text-slate-500">
+    {getFileIcon(file)}
+  </div>
+);
 
-  const docPreview = (
+return (
+  <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
     <button
       type="button"
       onClick={onPreviewClick}
-      className="relative flex w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-      style={{ aspectRatio: "3 / 4" }}
+      className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-auto md:aspect-square focus:outline-none focus:ring-2 focus:ring-emerald-500"
     >
       {docPreviewContent}
     </button>
-  );
 
-  return (
-    <div className="group relative flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
-      {docPreview}
+    {canManage && (
+      <div ref={menuRef} className="absolute right-2 top-2 z-10">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen((prev) => !prev);
+          }}
+          className="rounded-full bg-white/90 p-1 shadow-sm hover:bg-slate-100"
+        >
+          <span className="text-xl leading-none">⋮</span>
+        </button>
 
-{/* meta blokk kiiktatva – dokumentumok fotó layoutot kapnak */}
-
-      {/* kebab */}
-      {canManage && (
-        <div ref={menuRef} className="absolute right-3 top-3 z-10">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen((prev) => !prev);
-            }}
-            className="rounded-full bg-white/90 p-1 shadow-sm hover:bg-slate-100"
-          >
-            <span className="text-xl leading-none">⋮</span>
-          </button>
-
-          {menuOpen && (
-            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
-              {onOpen && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpen();
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-100"
-                >
-                  Megnyitás
-                </button>
-              )}
-
+        {menuOpen && (
+          <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
+            {onOpen && (
               <button
                 type="button"
                 onClick={() => {
                   setMenuOpen(false);
-                  onRename();
+                  onOpen();
                 }}
                 className="w-full px-3 py-2 text-left hover:bg-slate-100"
               >
-                Átnevezés
+                Megnyitás
               </button>
+            )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onDelete();
-                }}
-                className="w-full px-3 py-2 text-left text-red-600 hover:bg-red-50"
-              >
-                Törlés
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onRename();
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-slate-100"
+            >
+              Átnevezés
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete();
+              }}
+              className="w-full px-3 py-2 text-left text-red-600 hover:bg-red-50"
+            >
+              Törlés
+            </button>
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+);
 }
