@@ -181,7 +181,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             Még nincs dokumentum ehhez az utazáshoz.
           </div>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
             {docFiles.map((file, index) => {
               const canManage =
                 !!currentUserId &&

@@ -77,7 +77,10 @@ export default function FileCard({
 <button
   type="button"
   onClick={onPreviewClick}
-  className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-auto md:aspect-square focus:outline-none focus:ring-2 focus:ring-emerald-500"
+  className="block w-full overflow-hidden rounded-2xl 
+h-40 sm:h-48 
+md:h-[200px] lg:h-[220px] xl:h-[240px] 
+md:aspect-square"
 >
           {thumbSrc ? (
             <img
@@ -177,7 +180,10 @@ return (
     <button
       type="button"
       onClick={onPreviewClick}
-      className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-auto md:aspect-square focus:outline-none focus:ring-2 focus:ring-emerald-500"
+      className="block w-full overflow-hidden rounded-2xl 
+h-40 sm:h-48 
+md:h-[200px] lg:h-[220px] xl:h-[240px] 
+md:aspect-square"
     >
       {docPreviewContent}
     </button>
