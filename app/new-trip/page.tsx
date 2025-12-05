@@ -3,8 +3,27 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
-import { buildTripFolderName } from "@/lib/trip/format";
 import { ChevronLeft } from "lucide-react";
+
+/**
+ * Helyi helper a mappanévhez.
+ * Pl.: "2025-12-05 – Mályi"
+ */
+function buildTripFolderNameLocal(params: {
+  title: string;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}) {
+  const { title, dateFrom } = params;
+
+  if (dateFrom && title) {
+    return `${dateFrom} – ${title}`;
+  }
+
+  if (title) return title;
+
+  return "TripLog utazás";
+}
 
 export default function NewTripPage() {
   const supabase = createClient();
@@ -38,11 +57,13 @@ export default function NewTripPage() {
     // 1) Keresés a Drive-ban: van-e már TripLog nevű mappa?
     const searchRes = await fetch(
       "https://www.googleapis.com/drive/v3/files?q=" +
-        encodeURIComponent(`name='TripLog' and mimeType='application/vnd.google-apps.folder' and trashed=false`) +
+        encodeURIComponent(
+          `name='TripLog' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        ) +
         "&fields=files(id,name)",
       {
         headers: { Authorization: `Bearer ${accessToken}` },
-      }
+      },
     );
 
     const searchJson = await searchRes.json();
@@ -75,9 +96,9 @@ export default function NewTripPage() {
     accessToken: string,
     tripTitle: string,
     dateFrom: string,
-    dateTo: string
+    dateTo: string,
   ): Promise<string> {
-    const folderName = buildTripFolderName({
+    const folderName = buildTripFolderNameLocal({
       title: tripTitle,
       dateFrom,
       dateTo,
@@ -106,7 +127,7 @@ export default function NewTripPage() {
   async function createPlaceholderTxt(
     folderId: string,
     accessToken: string,
-    tripTitle: string
+    tripTitle: string,
   ) {
     const welcomeText = `
 Üdvözöl a TripLog!
@@ -129,7 +150,7 @@ Kellemes utazást és sok szép élményt kívánunk!
     const form = new FormData();
     form.append(
       "metadata",
-      new Blob([JSON.stringify(metadata)], { type: "application/json" })
+      new Blob([JSON.stringify(metadata)], { type: "application/json" }),
     );
     form.append("file", new Blob([welcomeText], { type: "text/plain" }));
 
@@ -141,7 +162,7 @@ Kellemes utazást és sok szép élményt kívánunk!
           Authorization: `Bearer ${accessToken}`,
         },
         body: form,
-      }
+      },
     );
   }
 
@@ -196,7 +217,7 @@ Kellemes utazást és sok szép élményt kívánunk!
         accessToken,
         title,
         dateFrom,
-        dateTo
+        dateTo,
       );
 
       // --- 6) Placeholder TXT létrehozása
