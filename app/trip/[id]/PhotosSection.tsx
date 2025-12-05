@@ -222,14 +222,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
           />
 
           <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
-            {/* bezárás gomb desktopon */}
-            <button
-              type="button"
-              onClick={closeLightbox}
-              className="absolute right-3 top-3 hidden rounded-full bg-black/60 px-2 py-1 text-xs text-slate-100 hover:bg-black md:inline-flex"
-            >
-              Bezárás
-            </button>
+            
 
             <div className="relative flex items-center justify-between">
               {/* balra nyíl (desktop) */}
