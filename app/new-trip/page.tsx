@@ -75,7 +75,12 @@ export default function NewTripPage() {
       setError("Az utazás címe kötelező.");
       return;
     }
-
+   
+   if (!dateFrom) {
+     alert("Kérlek adj meg legalább egy kezdő dátumot!");
+     return;
+    }
+ 
     setError(null);
     setSubmitting(true);
 
