@@ -10,67 +10,71 @@ interface Props {
 export default function DestinationAutocomplete({ value, onChange }: Props) {
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [placesLib, setPlacesLib] = useState<any>(null);
   const [isFocused, setIsFocused] = useState(false);
 
+  const sessionTokenRef = useRef<any>(null);
   const autocompleteServiceRef = useRef<any>(null);
-  const placesServiceRef = useRef<any>(null);
 
-  // -----------------------------
-  // SCRIPT BETÖLTÉS: Google Maps Places API
-  // -----------------------------
+  // ------------------------------------------------------------
+  // 1) Google Places Library betöltése (2025 ajánlott mód)
+  // ------------------------------------------------------------
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    let isMounted = true;
 
-    if ((window as any).google?.maps?.places) {
-      setLoaded(true);
-      return;
+    async function loadPlaces() {
+      try {
+        // Google Maps Places library betöltése
+        // A kulcsot a script automatikusan betölti
+        const { AutocompleteSessionToken, AutocompleteService, Place } =
+          (await (window as any).google.maps.importLibrary("places")) as any;
+
+        if (!isMounted) return;
+
+        setPlacesLib({ AutocompleteSessionToken, AutocompleteService, Place });
+
+        // Session token (Google szerint kötelező minden új sessionhöz)
+        sessionTokenRef.current = new AutocompleteSessionToken();
+
+        autocompleteServiceRef.current =
+          new AutocompleteService();
+      } catch (err) {
+        console.error("Places library load error:", err);
+      }
     }
 
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
-    script.async = true;
-    script.defer = true;
+    // Ha google még nincs betöltve, várjunk
+    const check = setInterval(() => {
+      if ((window as any).google?.maps?.importLibrary) {
+        clearInterval(check);
+        loadPlaces();
+      }
+    }, 100);
 
-    script.onload = () => {
-      setLoaded(true);
+    return () => {
+      isMounted = false;
+      clearInterval(check);
     };
-
-    document.body.appendChild(script);
   }, []);
 
-  // -----------------------------
-  // AUTOCOMPLETE SERVICE INIT
-  // -----------------------------
+  // ------------------------------------------------------------
+  // 2) Ha a user gépel → város-only autocomplete kérés
+  // ------------------------------------------------------------
   useEffect(() => {
-    if (!loaded) return;
-
-    const { google } = window as any;
-    if (!google) return;
-
-    autocompleteServiceRef.current =
-      new google.maps.places.AutocompleteService();
-
-    const dummy = document.createElement("div");
-    placesServiceRef.current = new google.maps.places.PlacesService(dummy);
-  }, [loaded]);
-
-  // -----------------------------
-  // GET SUGGESTIONS (CITY-ONLY MODE)
-  // -----------------------------
-  useEffect(() => {
-    if (!loaded) return;
+    if (!placesLib) return;
     if (!query.trim()) {
       setSuggestions([]);
       return;
     }
 
-    const { google } = window as any;
+    const service = autocompleteServiceRef.current;
+    if (!service) return;
 
-    autocompleteServiceRef.current.getPlacePredictions(
+    service.getPlacePredictions(
       {
         input: query,
-        types: ["(cities)"], // CITY-ONLY MODE
+        types: ["(cities)"], // CITY-ONLY ⚡
+        sessionToken: sessionTokenRef.current,
         language: "hu",
         region: "hu",
       },
@@ -82,70 +86,81 @@ export default function DestinationAutocomplete({ value, onChange }: Props) {
         setSuggestions(predictions);
       }
     );
-  }, [query, loaded]);
+  }, [query, placesLib]);
 
-  // -----------------------------
-  // KIVÁLASZTOTT HELY RÉSZLETEINEK LEKÉRÉSE
-  // -----------------------------
-  const handleSelect = (prediction: any) => {
-    if (!placesServiceRef.current) return;
+  // ------------------------------------------------------------
+  // 3) Város kiválasztása → részletes adatok lekérése
+  // ------------------------------------------------------------
+  const handleSelect = async (prediction: any) => {
+    try {
+      if (!placesLib) return;
 
-    placesServiceRef.current.getDetails(
-      {
+      const { Place } = placesLib;
+
+      const place = new Place({
         placeId: prediction.place_id,
-        fields: ["address_components", "formatted_address", "geometry"],
-      },
-      (place: any) => {
-        if (!place) return;
+        requestedLanguage: "hu",
+      });
 
-        const comps = place.address_components || [];
+      // Fetch fields (2025 új módszer)
+      await place.fetchFields({
+        fields: ["addressComponents", "displayName", "formattedAddress"],
+      });
 
-        const city =
-          comps.find((c: any) =>
-            c.types.includes("locality")
-          )?.long_name ||
-          comps.find((c: any) =>
-            c.types.includes("administrative_area_level_1")
-          )?.long_name;
+      const components = place.addressComponents || [];
 
-        const region = comps.find((c: any) =>
+      // város
+      const city =
+        components.find((c: any) =>
+          c.types.includes("locality")
+        )?.longText ??
+        components.find((c: any) =>
           c.types.includes("administrative_area_level_1")
-        )?.long_name;
+        )?.longText ??
+        place.displayName;
 
-        const country = comps.find((c: any) =>
-          c.types.includes("country")
-        )?.long_name;
+      // régió
+      const region = components.find((c: any) =>
+        c.types.includes("administrative_area_level_1")
+      )?.longText;
 
-        // BOOKING STYLE FORMAT
-        const finalString = [city, region, country].filter(Boolean).join(", ");
+      // ország
+      const country = components.find((c: any) =>
+        c.types.includes("country")
+      )?.longText;
 
-        onChange(finalString);
-        setQuery(finalString);
-        setSuggestions([]);
-      }
-    );
+      // Booking-stílusú format
+      const finalString = [city, region, country].filter(Boolean).join(", ");
+
+      onChange(finalString);
+      setQuery(finalString);
+      setSuggestions([]);
+    } catch (err) {
+      console.error("Place details error:", err);
+    }
   };
 
+  // ------------------------------------------------------------
+  // UI — Booking stílusú lista
+  // ------------------------------------------------------------
   return (
     <div className="relative">
-      {/* INPUT */}
       <input
         type="text"
         className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
-        placeholder="Pl.: Barcelona, Spanyolország"
+        placeholder="Pl.: Barcelona, Katalónia, Spanyolország"
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
-          onChange(e.target.value); // fallback plain text
+          onChange(e.target.value); // fallback text
         }}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setTimeout(() => setIsFocused(false), 150)}
       />
 
-      {/* SUGGESTION LIST */}
       {isFocused && suggestions.length > 0 && (
         <div className="absolute z-20 bg-white w-full mt-2 rounded-xl shadow-lg border border-slate-100 max-h-64 overflow-y-auto">
-          {suggestions.map((s) => {
+          {suggestions.map((s: any) => {
             const main = s.structured_formatting.main_text;
             const secondary = s.structured_formatting.secondary_text;
 

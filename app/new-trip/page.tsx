@@ -195,10 +195,10 @@ export default function NewTripPage() {
                 Desztináció
               </label>
 
-              <DestinationAutocomplete
-                value={destination}
-                onChange={(val) => setDestination(val)}
-              />
+<DestinationAutocomplete
+  value={destination}
+  onChange={(val) => setDestination(val)}
+/>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
