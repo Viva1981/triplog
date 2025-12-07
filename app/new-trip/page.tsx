@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import Link from "next/link";
-import { buildTripFolderName } from "../../lib/trip/drive";
 import type { Trip } from "../../lib/trip/types";
+
+// Csak EZ az import kell a Drive-mappa + TXT létrehozásához
+import { setupDriveForNewTrip } from "@/lib/trip/driveSetup";
 
 type User = {
   id: string;
@@ -27,6 +29,9 @@ export default function NewTripPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ---------------------------------------------------------
+  // BEJELENTKEZETT USER LEKÉRÉSE
+  // ---------------------------------------------------------
   useEffect(() => {
     const fetchUser = async () => {
       const {
@@ -49,15 +54,20 @@ export default function NewTripPage() {
         email: user.email ?? undefined,
         displayName,
       });
+
       setLoadingUser(false);
     };
 
     fetchUser();
   }, [router]);
 
+  // ---------------------------------------------------------
+  // ÚJ UTAZÁS LÉTREHOZÁSA
+  // ---------------------------------------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
     if (!title.trim()) {
       setError("Az utazás címe kötelező.");
       return;
@@ -67,7 +77,7 @@ export default function NewTripPage() {
     setSubmitting(true);
 
     try {
-      // új trip beszúrása
+      // 1) Trip INSERT
       const { data: tripData, error: tripError } = await supabase
         .from("trips")
         .insert({
@@ -85,14 +95,12 @@ export default function NewTripPage() {
 
       if (tripError || !tripData) {
         console.error("TRIP INSERT ERROR:", tripError);
-        throw new Error(
-          tripError?.message ?? "Nem sikerült létrehozni az utazást."
-        );
+        throw new Error("Nem sikerült létrehozni az utazást.");
       }
 
       const trip = tripData as Trip;
 
-      // owner felvétele trip_members-be + display_name + email
+      // 2) Owner felvétele trip_members-be
       const displayName =
         user.displayName || user.email || "Ismeretlen utazó";
 
@@ -107,13 +115,24 @@ export default function NewTripPage() {
 
       if (memberError) {
         console.error("TRIP_MEMBER OWNER INSERT ERROR:", memberError);
-        // itt nem dobunk, a trip már létezik, megy tovább
       }
 
-      // opcionális: drive folder + „napló” létrehozás marad a régi logika szerint, ha volt
-      // (ha később akarjuk, itt használjuk a buildTripFolderName-t, most nem piszkálom tovább)
+      // 3) Drive mappa + welcome TXT létrehozása
+      try {
+        await setupDriveForNewTrip({
+          tripId: trip.id,
+          title: trip.title,
+          dateFrom: trip.date_from || "",
+          dateTo: trip.date_to || "",
+        });
+      } catch (driveErr) {
+        console.error("Drive setup error:", driveErr);
+        // NEM dobunk hibát — az utazás létrejött és használható
+      }
 
+      // 4) Navigáció az utazás oldalára
       router.push(`/trip/${trip.id}`);
+
     } catch (err: any) {
       console.error(err);
       setError(err?.message ?? "Ismeretlen hiba történt.");
@@ -121,6 +140,10 @@ export default function NewTripPage() {
       setSubmitting(false);
     }
   };
+
+  // ---------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------
 
   if (loadingUser) {
     return (
@@ -130,13 +153,12 @@ export default function NewTripPage() {
     );
   }
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-3xl mx-auto px-4 py-6">
+
         <div className="mb-4">
           <Link
             href="/"
@@ -222,3 +244,4 @@ export default function NewTripPage() {
     </main>
   );
 }
+
