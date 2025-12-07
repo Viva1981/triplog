@@ -6,7 +6,10 @@ import { supabase } from "../../lib/supabaseClient";
 import Link from "next/link";
 import type { Trip } from "../../lib/trip/types";
 
-// Csak EZ az import kell a Drive-mappa + TXT létrehozásához
+// Google Places autocomplete komponens
+import DestinationAutocomplete from "./DestinationAutocomplete";
+
+// Drive mappa létrehozása
 import { setupDriveForNewTrip } from "@/lib/trip/driveSetup";
 
 type User = {
@@ -127,10 +130,10 @@ export default function NewTripPage() {
         });
       } catch (driveErr) {
         console.error("Drive setup error:", driveErr);
-        // NEM dobunk hibát — az utazás létrejött és használható
+        // App továbbmegy, az utazás használható marad
       }
 
-      // 4) Navigáció az utazás oldalára
+      // 4) Navigáció az új utazás oldalára
       router.push(`/trip/${trip.id}`);
 
     } catch (err: any) {
@@ -191,12 +194,10 @@ export default function NewTripPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">
                 Desztináció
               </label>
-              <input
-                type="text"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
-                placeholder="Pl.: Mállyi, Magyarország"
+
+              <DestinationAutocomplete
                 value={destination}
-                onChange={(e) => setDestination(e.target.value)}
+                onChange={(val) => setDestination(val)}
               />
             </div>
 
@@ -244,4 +245,3 @@ export default function NewTripPage() {
     </main>
   );
 }
-
