@@ -1,10 +1,9 @@
 // lib/trip/driveSetup.ts
 
-import { createClient } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 
 /**
  * 1) Helyi helper a mappanévhez
- *    Pl. "2025-12-05 – Mályi"
  */
 export function buildTripFolderNameLocal(params: {
   title: string;
@@ -13,20 +12,16 @@ export function buildTripFolderNameLocal(params: {
 }) {
   const { title, dateFrom } = params;
 
-  if (dateFrom && title) {
-    return `${dateFrom} – ${title}`;
-  }
-
+  if (dateFrom && title) return `${dateFrom} – ${title}`;
   if (title) return title;
 
   return "TripLog utazás";
 }
 
 /**
- * 2) Felhasználó Google access tokenjének lekérése
+ * 2) Google OAuth access token lekérése
  */
 async function getGoogleAccessToken(): Promise<string | null> {
-  const supabase = createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -38,24 +33,20 @@ async function getGoogleAccessToken(): Promise<string | null> {
  * 3) TripLog root folder biztosítása
  */
 async function ensureTripLogRootFolder(accessToken: string): Promise<string> {
-  // keresés
+  // Keresés
   const searchRes = await fetch(
     "https://www.googleapis.com/drive/v3/files?q=" +
       encodeURIComponent(
         "name='TripLog' and mimeType='application/vnd.google-apps.folder' and trashed=false"
       ) +
       "&fields=files(id,name)",
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }
+    { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   const searchJson = await searchRes.json();
-  if (searchJson.files?.length > 0) {
-    return searchJson.files[0].id;
-  }
+  if (searchJson.files?.length > 0) return searchJson.files[0].id;
 
-  // létrehozás
+  // Létrehozás
   const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
     method: "POST",
     headers: {
@@ -73,7 +64,7 @@ async function ensureTripLogRootFolder(accessToken: string): Promise<string> {
 }
 
 /**
- * 4) Utazás mappájának létrehozása
+ * 4) Utazás saját mappájának létrehozása
  */
 async function createTripFolder(
   rootId: string,
@@ -82,11 +73,7 @@ async function createTripFolder(
   dateFrom: string,
   dateTo: string
 ): Promise<string> {
-  const folderName = buildTripFolderNameLocal({
-    title,
-    dateFrom,
-    dateTo,
-  });
+  const folderName = buildTripFolderNameLocal({ title, dateFrom, dateTo });
 
   const res = await fetch("https://www.googleapis.com/drive/v3/files", {
     method: "POST",
@@ -106,7 +93,7 @@ async function createTripFolder(
 }
 
 /**
- * 5) Placeholder üdvözlő TXT létrehozása
+ * 5) Placeholder TXT létrehozása
  */
 async function createWelcomeTxtFile(
   folderId: string,
@@ -149,8 +136,7 @@ Kellemes utazást és sok szép élményt kívánunk!
 }
 
 /**
- * 6) FŐ FUNKCIÓ:
- * Utazás létrehozásakor automatikusan Drive mappa + TXT létrehozása
+ * 6) FŐ FUNKCIÓ — Drive mappa + TXT létrehozása tripnél
  */
 export async function setupDriveForNewTrip(params: {
   tripId: string;
@@ -159,19 +145,18 @@ export async function setupDriveForNewTrip(params: {
   dateTo: string;
 }) {
   const { tripId, title, dateFrom, dateTo } = params;
-  const supabase = createClient();
 
-  // token
+  // 1) Token lekérése
   const accessToken = await getGoogleAccessToken();
   if (!accessToken) {
-    console.warn("No Google access token – skipping folder creation.");
+    console.warn("Nincs Google token – skip Drive setup.");
     return;
   }
 
-  // root
+  // 2) Root mappa
   const rootId = await ensureTripLogRootFolder(accessToken);
 
-  // trip folder
+  // 3) Utazás mappa
   const folderId = await createTripFolder(
     rootId,
     accessToken,
@@ -180,10 +165,10 @@ export async function setupDriveForNewTrip(params: {
     dateTo
   );
 
-  // welcome TXT
+  // 4) TXT létrehozás
   await createWelcomeTxtFile(folderId, accessToken, title);
 
-  // folder ID mentése Supabase-be
+  // 5) Mentés Supabase-be
   await supabase
     .from("trips")
     .update({ drive_folder_id: folderId })
