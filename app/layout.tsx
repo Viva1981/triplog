@@ -15,6 +15,14 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="hu">
+      <head>
+        {/* Google Maps JavaScript API (2025-ös kompatibilis formában) */}
+        <script
+          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&callback=Function.prototype`}
+          async
+        ></script>
+      </head>
+
       <body className="bg-slate-50">
         <SwRegister />
         <Header />
@@ -23,4 +31,3 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     </html>
   );
 }
-
