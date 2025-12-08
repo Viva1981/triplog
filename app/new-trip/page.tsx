@@ -6,11 +6,11 @@ import { supabase } from "../../lib/supabaseClient";
 import Link from "next/link";
 import type { Trip } from "../../lib/trip/types";
 
-// Google Places autocomplete komponens
-import DestinationAutocomplete from "./DestinationAutocomplete";
-
-// Drive mappa létrehozása
+// Drive setup
 import { setupDriveForNewTrip } from "@/lib/trip/driveSetup";
+
+// Google Places városválasztó
+import DestinationAutocomplete from "@/DestinationAutocomplete";
 
 type User = {
   id: string;
@@ -75,12 +75,17 @@ export default function NewTripPage() {
       setError("Az utazás címe kötelező.");
       return;
     }
-   
-   if (!dateFrom) {
-     alert("Kérlek adj meg legalább egy kezdő dátumot!");
-     return;
+
+    if (!dateFrom) {
+      setError("A kezdő dátum megadása kötelező.");
+      return;
     }
- 
+
+    if (dateTo && dateFrom && new Date(dateTo) < new Date(dateFrom)) {
+      setError("A befejező dátum nem lehet korábbi, mint a kezdő dátum.");
+      return;
+    }
+
     setError(null);
     setSubmitting(true);
 
@@ -92,7 +97,7 @@ export default function NewTripPage() {
           owner_id: user.id,
           title: title.trim(),
           destination: destination.trim() || null,
-          date_from: dateFrom || null,
+          date_from: dateFrom, // itt már biztosan van érték
           date_to: dateTo || null,
           notes: null,
         })
@@ -109,8 +114,7 @@ export default function NewTripPage() {
       const trip = tripData as Trip;
 
       // 2) Owner felvétele trip_members-be
-      const displayName =
-        user.displayName || user.email || "Ismeretlen utazó";
+      const displayName = user.displayName || user.email || "Ismeretlen utazó";
 
       const { error: memberError } = await supabase.from("trip_members").insert({
         trip_id: trip.id,
@@ -135,12 +139,11 @@ export default function NewTripPage() {
         });
       } catch (driveErr) {
         console.error("Drive setup error:", driveErr);
-        // App továbbmegy, az utazás használható marad
+        // NEM dobunk hibát — az utazás létrejött és használható
       }
 
-      // 4) Navigáció az új utazás oldalára
+      // 4) Navigáció az utazás oldalára
       router.push(`/trip/${trip.id}`);
-
     } catch (err: any) {
       console.error(err);
       setError(err?.message ?? "Ismeretlen hiba történt.");
@@ -156,7 +159,7 @@ export default function NewTripPage() {
   if (loadingUser) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-slate-50">
-        <p>Betöltés...</p>
+        <p>Betöltés.</p>
       </main>
     );
   }
@@ -166,7 +169,6 @@ export default function NewTripPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-3xl mx-auto px-4 py-6">
-
         <div className="mb-4">
           <Link
             href="/"
@@ -189,7 +191,7 @@ export default function NewTripPage() {
               <input
                 type="text"
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:ring-2 focus:ring-[#16ba53]/30 focus:border-[#16ba53]"
-                placeholder="Pl.: Tavaszi kiruccanás Mállyiba"
+                placeholder="Pl.: Tavaszi Alpok"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
@@ -199,17 +201,16 @@ export default function NewTripPage() {
               <label className="block text-xs font-medium text-slate-600 mb-1">
                 Desztináció
               </label>
-
-<DestinationAutocomplete
-  value={destination}
-  onChange={(val) => setDestination(val)}
-/>
+              <DestinationAutocomplete
+                value={destination}
+                onChange={setDestination}
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Kezdő dátum
+                  Kezdő dátum *
                 </label>
                 <input
                   type="date"
