@@ -360,7 +360,7 @@ export default function TripHeader({
                 }}
                 className="mt-2 inline-flex items-center text-[11px] text-slate-500 hover:text-slate-700"
               >
-                ✏️ Utazás adatainak szerkesztése
+                 Utazás adatainak szerkesztése
               </button>
             </>
           )}
