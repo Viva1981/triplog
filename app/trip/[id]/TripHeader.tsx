@@ -6,7 +6,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import type { Trip, TripExpense, TripMember } from "../../../lib/trip/types";
 
 // Város autocomplete ugyanaz, mint az új utazás oldalon
-import DestinationAutocomplete from "@/DestinationAutocomplete";
+import DestinationAutocomplete from "../../new-trip/DestinationAutocomplete";
 
 type User = {
   id: string;

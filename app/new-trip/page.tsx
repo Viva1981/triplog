@@ -10,7 +10,7 @@ import type { Trip } from "../../lib/trip/types";
 import { setupDriveForNewTrip } from "@/lib/trip/driveSetup";
 
 // Google Places városválasztó
-import DestinationAutocomplete from "@/DestinationAutocomplete";
+import DestinationAutocomplete from "./DestinationAutocomplete";
 
 type User = {
   id: string;
