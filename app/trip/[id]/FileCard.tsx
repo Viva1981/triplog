@@ -26,23 +26,26 @@ export default function FileCard({
 
   const isPhoto = file.type === "photo";
 
-  // Stabil thumbnail – Drive ID preferálása
-  const stableThumb = file.drive_file_id
-    ? `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w400`
-    : undefined;
+  // ---------------- STABIL THUMBNAIL LOGIKA ----------------
+  // Régi: drive.google.com/thumbnail?id=... → redirect, CORB, törött képek
+  // Új: mindig a Drive API által adott thumbnail_link-et használjuk (lh3.googleusercontent.com)
+  let thumbSrc: string | undefined = file.thumbnail_link || undefined;
 
-  const thumbSrc =
-    stableThumb ||
-    file.thumbnail_link ||
-    (isPhoto ? file.preview_link || undefined : undefined);
+  // Ha a Drive s220-as thumbot ad, feljebb skálázzuk s400-ra (ugyanazon a domainen, biztonságos)
+  if (thumbSrc) {
+    thumbSrc = thumbSrc.replace(/=s\d+$/, "=s400");
+  }
+
+  // Ha még mindig nincs semmi és fotó, utolsó fallbackként próbálkozhatunk preview_link-kel
+  if (!thumbSrc && isPhoto) {
+    thumbSrc = file.preview_link || undefined;
+  }
+  // ---------------------------------------------------------
 
   // ---------------- CLICK-OUTSIDE + SCROLL-ON-CLOSE ----------------
   useEffect(() => {
     function handleClickOutside(e: Event) {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(e.target as Node)
-      ) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
     }
@@ -74,14 +77,14 @@ export default function FileCard({
     return (
       <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
         {/* clickable image */}
-<button
-  type="button"
-  onClick={onPreviewClick}
-  className="block w-full overflow-hidden rounded-2xl 
+        <button
+          type="button"
+          onClick={onPreviewClick}
+          className="block w-full overflow-hidden rounded-2xl 
 h-40 sm:h-48 
 md:h-[200px] lg:h-[220px] xl:h-[240px] 
 md:aspect-square"
->
+        >
           {thumbSrc ? (
             <img
               src={thumbSrc}
@@ -156,91 +159,91 @@ md:aspect-square"
     );
   }
 
-// ---------------------------------------------------------
-// ------------------ DOCUMENT CARD ------------------------
-// ---------------------------------------------------------
+  // ---------------------------------------------------------
+  // ------------------ DOCUMENT CARD ------------------------
+  // ---------------------------------------------------------
 
-const hasThumb = !!thumbSrc;
+  const hasThumb = !!thumbSrc;
 
-const docPreviewContent = hasThumb ? (
-  <img
-    src={thumbSrc}
-    alt={file.name}
-    referrerPolicy="no-referrer"
-    className="h-full w-full object-cover"
-  />
-) : (
-  <div className="flex h-full w-full items-center justify-center text-slate-500">
-    {getFileIcon(file)}
-  </div>
-);
+  const docPreviewContent = hasThumb ? (
+    <img
+      src={thumbSrc}
+      alt={file.name}
+      referrerPolicy="no-referrer"
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <div className="flex h-full w-full items-center justify-center text-slate-500">
+      {getFileIcon(file)}
+    </div>
+  );
 
-return (
-  <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-    <button
-      type="button"
-      onClick={onPreviewClick}
-      className="block w-full overflow-hidden rounded-2xl 
+  return (
+    <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
+      <button
+        type="button"
+        onClick={onPreviewClick}
+        className="block w-full overflow-hidden rounded-2xl 
 h-40 sm:h-48 
 md:h-[200px] lg:h-[220px] xl:h-[240px] 
 md:aspect-square"
-    >
-      {docPreviewContent}
-    </button>
+      >
+        {docPreviewContent}
+      </button>
 
-    {canManage && (
-      <div ref={menuRef} className="absolute right-2 top-2 z-10">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setMenuOpen((prev) => !prev);
-          }}
-          className="rounded-full bg-white/90 p-1 shadow-sm hover:bg-slate-100"
-        >
-          <span className="text-xl leading-none">⋮</span>
-        </button>
+      {canManage && (
+        <div ref={menuRef} className="absolute right-2 top-2 z-10">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((prev) => !prev);
+            }}
+            className="rounded-full bg-white/90 p-1 shadow-sm hover:bg-slate-100"
+          >
+            <span className="text-xl leading-none">⋮</span>
+          </button>
 
-        {menuOpen && (
-          <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
-            {onOpen && (
+          {menuOpen && (
+            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
+              {onOpen && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpen();
+                  }}
+                  className="w-full px-3 py-2 text-left hover:bg-slate-100"
+                >
+                  Megnyitás
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
                   setMenuOpen(false);
-                  onOpen();
+                  onRename();
                 }}
                 className="w-full px-3 py-2 text-left hover:bg-slate-100"
               >
-                Megnyitás
+                Átnevezés
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={() => {
-                setMenuOpen(false);
-                onRename();
-              }}
-              className="w-full px-3 py-2 text-left hover:bg-slate-100"
-            >
-              Átnevezés
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setMenuOpen(false);
-                onDelete();
-              }}
-              className="w-full px-3 py-2 text-left text-red-600 hover:bg-red-50"
-            >
-              Törlés
-            </button>
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-);
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDelete();
+                }}
+                className="w-full px-3 py-2 text-left text-red-600 hover:bg-red-50"
+              >
+                Törlés
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
