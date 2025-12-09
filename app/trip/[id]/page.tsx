@@ -124,12 +124,12 @@ export default function TripDetailPage() {
       setFilesError(null);
 
       const { data, error } = await supabase
-  .from("trip_files")
-  .select(
-    "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link"
-  )
-  .eq("trip_id", tripId)
-  .order("created_at", { ascending: true });
+        .from("trip_files")
+        .select(
+          "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link"
+        )
+        .eq("trip_id", tripId)
+        .order("created_at", { ascending: true });
 
       if (error) {
         console.error("FILES FETCH ERROR:", error);
@@ -248,7 +248,7 @@ export default function TripDetailPage() {
     return folderId;
   };
 
-  // Feltöltés Drive-ra + trip_files mentés
+  // Feltöltés Drive-ra + trip_files mentés (JAVÍTVA)
   const uploadFileToDriveAndSave = async (
     type: "photo" | "document",
     file: File
@@ -309,8 +309,9 @@ export default function TripDetailPage() {
         base64Data +
         closeDelimiter;
 
+      // 🔧 ITT A FŐ FIX: webContentLink is kérve
       const uploadRes = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,thumbnailLink,webViewLink",
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,thumbnailLink,webViewLink,webContentLink",
         {
           method: "POST",
           headers: {
@@ -334,25 +335,34 @@ export default function TripDetailPage() {
       const webView =
         (uploaded.webViewLink as string | undefined | null) ??
         `https://drive.google.com/file/d/${fileId}/view`;
+      const webContent =
+        (uploaded.webContentLink as string | undefined | null) ?? null;
+
+      // 👉 EBBŐL LESZ A LIGHTBOX NAGY KÉP
+      const previewUrl =
+        webContent ||
+        (file.type?.startsWith("image/")
+          ? `https://lh3.googleusercontent.com/d/${fileId}=s2000`
+          : webView);
 
       const displayName = getBaseName(file.name);
 
-   const { data, error } = await supabase
-  .from("trip_files")
-  .insert({
-    trip_id: trip.id,
-    user_id: user.id,
-    type,
-    drive_file_id: fileId,
-    name: displayName,
-    mime_type: file.type || null,
-    thumbnail_link: thumb,
-    preview_link: webView,
-  })
-  .select(
-    "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link"
-  )
-  .single();
+      const { data, error } = await supabase
+        .from("trip_files")
+        .insert({
+          trip_id: trip.id,
+          user_id: user.id,
+          type,
+          drive_file_id: fileId,
+          name: displayName,
+          mime_type: file.type || null,
+          thumbnail_link: thumb,
+          preview_link: previewUrl, // 👈 Itt már a jó URL megy be
+        })
+        .select(
+          "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link"
+        )
+        .single();
 
       if (error || !data) {
         console.error("TRIP_FILES INSERT ERROR:", error);
@@ -483,19 +493,19 @@ export default function TripDetailPage() {
     }
   };
 
-const handleScrollToExpenses = () => {
-  const el = document.getElementById("expenses-section");
-  if (el) {
-    el.scrollIntoView({ behavior: "smooth" });
+  const handleScrollToExpenses = () => {
+    const el = document.getElementById("expenses-section");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
 
-    const input = el.querySelector("input[name='category']");
-    if (input) {
-      setTimeout(() => {
-        (input as HTMLInputElement).focus();
-      }, 400);
+      const input = el.querySelector("input[name='category']");
+      if (input) {
+        setTimeout(() => {
+          (input as HTMLInputElement).focus();
+        }, 400);
+      }
     }
-  }
-};
+  };
 
   const handleRenameFile = async (file: TripFile) => {
     const newName = prompt("Új név:", file.name);
@@ -588,14 +598,15 @@ const handleScrollToExpenses = () => {
         </div>
 
         {/* Fő info kártya */}
-<TripHeader
-  trip={trip}
-  user={user}
-  from={from}
-  to={to}
-  isOwner={!!isOwner}
-  onScrollToExpenses={handleScrollToExpenses}
-/>
+        <TripHeader
+          trip={trip}
+          user={user}
+          from={from}
+          to={to}
+          isOwner={!!isOwner}
+          onScrollToExpenses={handleScrollToExpenses}
+        />
+
         {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
         <section className="grid gap-4 md:grid-cols-2 mb-4">
           <PhotosSection
@@ -624,17 +635,11 @@ const handleScrollToExpenses = () => {
             currentUserId={user?.id ?? null}
           />
 
-          <NotesSection
-            tripId={trip.id}
-            initialNotes={trip.notes ?? null}
-          />
+          <NotesSection tripId={trip.id} initialNotes={trip.notes ?? null} />
 
           {/* IDE kerül az anchor, amire a TripHeader gomb scrolloz */}
           <div id="expenses-section">
-            <ExpensesSection
-              tripId={trip.id}
-              userId={user?.id ?? null}
-            />
+            <ExpensesSection tripId={trip.id} userId={user?.id ?? null} />
           </div>
         </section>
       </div>
