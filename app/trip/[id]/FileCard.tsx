@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 /**
  * Képfeltöltés Google Drive-ból, BLOB → object URL.
- * Csak kliens oldalon fut, csak fotókhoz használjuk.
+ * Csak kliens oldalon fut, képfájlokhoz használjuk.
  */
 function useDriveImageBlob(file: TripFile | null) {
   const [src, setSrc] = useState<string | null>(null);
@@ -117,10 +117,13 @@ export default function FileCard({
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const isPhoto = file.type === "photo";
+  const isImageDoc =
+    file.type === "document" && file.mime_type?.startsWith("image/");
+  const shouldLoadBlob = isPhoto || isImageDoc;
 
-  // Fotóknál használjuk a Drive blob loadert
-  const { src: photoSrc, loading: photoLoading } = useDriveImageBlob(
-    isPhoto ? file : null
+  // KÉPFAJL (fotó vagy image-dokumentum) → blob
+  const { src: blobSrc, loading: blobLoading } = useDriveImageBlob(
+    shouldLoadBlob ? file : null
   );
 
   const menuToggle = (e: React.MouseEvent) => {
@@ -164,13 +167,13 @@ export default function FileCard({
           className="block w-full overflow-hidden rounded-2xl 
             h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
         >
-          {photoLoading && !photoSrc ? (
+          {blobLoading && !blobSrc ? (
             <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
               Betöltés...
             </div>
-          ) : photoSrc ? (
+          ) : blobSrc ? (
             <img
-              src={photoSrc}
+              src={blobSrc}
               alt={file.name}
               className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
             />
@@ -224,9 +227,11 @@ export default function FileCard({
   }
 
   // ---------------------- DOCUMENT CARD ----------------------
-  // Itt EGYELŐRE marad a régi logika: thumbnail_link / preview_link vagy ikon
 
-  const docThumbSrc = file.thumbnail_link || file.preview_link || null;
+  // Ha a dokumentum is képfájl (JPG/PNG), akkor a blobSrc-t használjuk.
+  const isImageDocument = isImageDoc;
+  const docThumbFallback = file.thumbnail_link || file.preview_link || null;
+  const docThumbSrc = isImageDocument ? blobSrc || docThumbFallback : docThumbFallback;
 
   return (
     <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
@@ -236,7 +241,19 @@ export default function FileCard({
         className="block w-full overflow-hidden rounded-2xl 
           h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
       >
-        {docThumbSrc ? (
+        {isImageDocument ? (
+          docThumbSrc ? (
+            <img
+              src={docThumbSrc}
+              alt={file.name}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
+              Nincs előnézet
+            </div>
+          )
+        ) : docThumbSrc ? (
           <img
             src={docThumbSrc}
             alt={file.name}
@@ -302,3 +319,4 @@ export default function FileCard({
     </div>
   );
 }
+
