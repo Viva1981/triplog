@@ -1,27 +1,33 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Blob loader dokumentum lightboxhoz (PDF is!)
+ * UNIVERSAL DRIVE PREVIEW LOADER (PHOTO / IMAGE DOC / PDF → PNG)
+ * Same logic as FileCard → this feeds the LIGHTBOX.
  */
-function useDriveBlob(file: TripFile | null) {
+function useDriveFilePreview(file: TripFile | null) {
   const [src, setSrc] = useState<string | null>(null);
-  const urlRef = React.useRef<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      if (!file?.drive_file_id) {
-        setSrc(file?.thumbnail_link || file?.preview_link || null);
+      if (!file) return;
+
+      // fallback if missing ID
+      if (!file.drive_file_id) {
+        setSrc(file.thumbnail_link || file.preview_link || null);
         return;
       }
 
+      setLoading(true);
       try {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.provider_token;
@@ -31,34 +37,59 @@ function useDriveBlob(file: TripFile | null) {
           return;
         }
 
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
+        // ---------------------------
+        // IMAGE / PHOTO
+        // ---------------------------
+        if (file.mime_type?.startsWith("image/")) {
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+
+          if (!res.ok) throw new Error("Image load failed.");
+
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+
+          if (!cancelled) {
+            if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+            urlRef.current = url;
+            setSrc(url);
           }
-        );
-
-        if (!res.ok) {
-          console.error("BLOB DOC ERROR", res.status);
-          setSrc(file.thumbnail_link || file.preview_link || null);
           return;
         }
 
-        const blob = await res.blob();
-        const objectUrl = URL.createObjectURL(blob);
+        // ---------------------------
+        // PDF → PNG EXPORT
+        // ---------------------------
+        if (file.mime_type === "application/pdf") {
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
 
-        if (cancelled) {
-          URL.revokeObjectURL(objectUrl);
+          if (!res.ok) throw new Error("PDF export failed.");
+
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+
+          if (!cancelled) {
+            if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+            urlRef.current = url;
+            setSrc(url);
+          }
           return;
         }
 
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-
-        urlRef.current = objectUrl;
-        setSrc(objectUrl);
-      } catch (e) {
-        console.error("DOC BLOB UNEXPECTED", e);
-        setSrc(file?.preview_link || file?.thumbnail_link || null);
+        // ---------------------------
+        // FALLBACK: other docs
+        // ---------------------------
+        setSrc(file.thumbnail_link || file.preview_link || null);
+      } catch (err) {
+        console.error("Lightbox preview error:", err);
+        setSrc(file.thumbnail_link || file.preview_link || null);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -66,13 +97,16 @@ function useDriveBlob(file: TripFile | null) {
 
     return () => {
       cancelled = true;
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
     };
-  }, [file?.drive_file_id]);
+  }, [file?.drive_file_id, file?.mime_type]);
 
-  return src;
+  return { src, loading };
 }
+
 
 type DocumentsSectionProps = {
   docFiles: TripFile[];
@@ -94,6 +128,7 @@ type DocumentsSectionProps = {
   currentUserId?: string | null;
 };
 
+
 export default function DocumentsSection({
   docFiles,
   loadingFiles,
@@ -112,17 +147,14 @@ export default function DocumentsSection({
 
   const controls = useAnimation();
 
+  const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
+
+  // 🟢 THIS LOADS PDF → PNG OR IMAGE → BLOB FOR LIGHTBOX
+  const { src: lightboxSrc, loading: lightboxLoading } =
+    useDriveFilePreview(current);
+
   const resetPosition = async () => {
     await controls.start({ x: 0, y: 0, transition: { duration: 0.15 } });
-  };
-
-  const handleDocChange = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await uploadFileToDriveAndSave("document", file);
-    event.target.value = "";
   };
 
   const openLightbox = (index: number) => {
@@ -157,7 +189,6 @@ export default function DocumentsSection({
 
   const handleDragEnd = (_: any, info: PanInfo) => {
     if (isZoomed) return;
-
     const threshold = 80;
     if (info.offset.x > threshold) showPrev();
     else if (info.offset.x < -threshold) showNext();
@@ -173,8 +204,8 @@ export default function DocumentsSection({
     setLastTap(now);
   };
 
-  const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
-  const lightboxSrc = useDriveBlob(current);
+
+  // ---------------------- UI RENDER -----------------------
 
   return (
     <>
@@ -194,7 +225,11 @@ export default function DocumentsSection({
             <input
               type="file"
               className="hidden"
-              onChange={handleDocChange}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadFileToDriveAndSave("document", f);
+                e.target.value = "";
+              }}
               disabled={submittingDoc}
             />
             {submittingDoc ? "Feltöltés..." : "Feltöltés"}
@@ -208,8 +243,7 @@ export default function DocumentsSection({
         ) : (
           <div className="mt-4 grid grid-cols-2 gap-4">
             {docFiles.map((file, index) => {
-              const canManage =
-                !!currentUserId && file.user_id === currentUserId;
+              const canManage = !!currentUserId && file.user_id === currentUserId;
 
               return (
                 <FileCard
@@ -217,22 +251,16 @@ export default function DocumentsSection({
                   file={file}
                   canManage={canManage}
                   onPreviewClick={() => openLightbox(index)}
-                  onOpen={() => {
-                    if (file.drive_file_id) {
-                      window.open(
-                        `https://drive.google.com/file/d/${file.drive_file_id}/view`,
-                        "_blank",
-                        "noopener,noreferrer"
-                      );
-                    }
-                  }}
+                  onOpen={() =>
+                    file.drive_file_id &&
+                    window.open(
+                      `https://drive.google.com/file/d/${file.drive_file_id}/view`,
+                      "_blank"
+                    )
+                  }
                   onRename={() => handleRenameFile(file)}
                   onDelete={() =>
-                    handleDeleteFile(
-                      file.id,
-                      "document",
-                      file.drive_file_id
-                    )
+                    handleDeleteFile(file.id, "document", file.drive_file_id)
                   }
                 />
               );
@@ -248,6 +276,7 @@ export default function DocumentsSection({
 
           <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
             <div className="relative flex items-center justify-between">
+              {/* PREV */}
               <button
                 onClick={showPrev}
                 className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
@@ -255,6 +284,7 @@ export default function DocumentsSection({
                 ◀
               </button>
 
+              {/* IMAGE */}
               <motion.div
                 className="relative flex flex-1 items-center justify-center"
                 drag={isZoomed ? false : "x"}
@@ -262,7 +292,9 @@ export default function DocumentsSection({
                 dragElastic={0.2}
                 onDragEnd={handleDragEnd}
               >
-                {lightboxSrc ? (
+                {lightboxLoading ? (
+                  <div className="text-white text-xs">Betöltés...</div>
+                ) : lightboxSrc ? (
                   <motion.img
                     key={current.id}
                     src={lightboxSrc}
@@ -280,10 +312,11 @@ export default function DocumentsSection({
                     onClick={handleImageTap}
                   />
                 ) : (
-                  <div className="text-white text-xs">Betöltés...</div>
+                  <div className="text-white">Nincs előnézet</div>
                 )}
               </motion.div>
 
+              {/* NEXT */}
               <button
                 onClick={showNext}
                 className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
@@ -292,6 +325,7 @@ export default function DocumentsSection({
               </button>
             </div>
 
+            {/* HUD */}
             {!isZoomed && (
               <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex justify-between px-4 text-[11px] text-slate-200">
                 <span>{current.name}</span>
