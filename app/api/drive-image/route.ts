@@ -11,9 +11,10 @@ export async function GET(req: Request) {
       return new NextResponse("Missing fileId", { status: 400 });
     }
 
-    // Supabase server client that reads cookies
+    // SSR Supabase kliens, cookie-k alapján
     const supabase = createRouteHandlerClient({ cookies });
 
+    // Session beolvasása (ez már működik!)
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -24,7 +25,7 @@ export async function GET(req: Request) {
       return new NextResponse("Missing Google token", { status: 401 });
     }
 
-    // Fetch binary data from Google Drive
+    // Drive → szerveroldali lekérés (binary)
     const googleRes = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       {
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (error) {
-    console.error("PROXY ERROR:", error);
+    console.error("DRIVE PROXY ERROR:", error);
     return new NextResponse("Internal Proxy Error", { status: 500 });
   }
 }
