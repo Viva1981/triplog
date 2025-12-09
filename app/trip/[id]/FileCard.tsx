@@ -5,20 +5,16 @@ import type { TripFile } from "@/lib/trip/types";
 import { getFileIcon } from "@/lib/trip/fileIcons";
 
 /**
- * Thumbnail generátor gridhez
- * Elsődleges: Drive thumbnail (400px)
- * Fallback: régi preview_link
+ * Proxy thumbnail URL — mindig működik, minden böngészőben,
+ * mert nem közvetlenül a Drive-hoz megy.
  */
-function getThumbnailSrc(file: TripFile): string {
+function getProxyThumbnail(file: TripFile): string {
   if (file.drive_file_id) {
-    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w400`;
+    return `/api/drive-image?fileId=${file.drive_file_id}`;
   }
 
-  if (file.thumbnail_link) {
-    return file.thumbnail_link.replace("=s220", "=s400");
-  }
-
-  return file.preview_link || "";
+  // régi adat fallback
+  return file.thumbnail_link || file.preview_link || "";
 }
 
 interface FileCardProps {
@@ -27,7 +23,7 @@ interface FileCardProps {
   onRename: () => void;
   onDelete: () => void;
   onPreviewClick?: () => void;
-  onOpen?: () => void;
+  onOpen?: () => void; // dokumentum esetén
 }
 
 export default function FileCard({
@@ -42,8 +38,7 @@ export default function FileCard({
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const isPhoto = file.type === "photo";
-
-  const thumbSrc = getThumbnailSrc(file);
+  const thumbSrc = getProxyThumbnail(file);
 
   useEffect(() => {
     function handleClickOutside(e: Event) {
@@ -69,22 +64,22 @@ export default function FileCard({
     };
   }, [menuOpen]);
 
-  // ---------------- PHOTO CARD ----------------
+  // ---------------------- PHOTO CARD ----------------------
 
   if (isPhoto) {
     return (
       <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
+        {/* MAIN CLICK → preview */}
         <button
           type="button"
           onClick={onPreviewClick}
           className="block w-full overflow-hidden rounded-2xl 
-          h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
+            h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
         >
           {thumbSrc ? (
             <img
               src={thumbSrc}
               alt={file.name}
-              referrerPolicy="no-referrer"
               className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
             />
           ) : (
@@ -94,6 +89,7 @@ export default function FileCard({
           )}
         </button>
 
+        {/* MENU */}
         {canManage && (
           <div ref={menuRef} className="absolute right-2 top-2 z-20">
             <button
@@ -138,7 +134,7 @@ export default function FileCard({
     );
   }
 
-  // ---------------- DOCUMENT CARD ----------------
+  // ---------------------- DOCUMENT CARD ----------------------
 
   return (
     <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
@@ -146,13 +142,12 @@ export default function FileCard({
         type="button"
         onClick={onPreviewClick}
         className="block w-full overflow-hidden rounded-2xl 
-        h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
+          h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
       >
         {thumbSrc ? (
           <img
             src={thumbSrc}
             alt={file.name}
-            referrerPolicy="no-referrer"
             className="h-full w-full object-cover"
           />
         ) : (
