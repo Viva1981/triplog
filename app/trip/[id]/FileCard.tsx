@@ -6,9 +6,9 @@ import { getFileIcon } from "@/lib/trip/fileIcons";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * BLOB LOADER – csak képfájlokhoz (photo + image/* document)
+ * UNIVERSAL FILE PREVIEW LOADER (PHOTO, IMAGE DOC, PDF → PNG)
  */
-function useDriveImageBlob(file: TripFile | null) {
+function useDriveFilePreview(file: TripFile | null) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const urlRef = useRef<string | null>(null);
@@ -19,6 +19,7 @@ function useDriveImageBlob(file: TripFile | null) {
     async function load() {
       if (!file) return;
 
+      // fallback if missing ID
       if (!file.drive_file_id) {
         setSrc(file.thumbnail_link || file.preview_link || null);
         return;
@@ -29,35 +30,64 @@ function useDriveImageBlob(file: TripFile | null) {
       try {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.provider_token;
-
         if (!token) {
           setSrc(file.thumbnail_link || file.preview_link || null);
           return;
         }
 
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        // -----------------------------------------
+        // PHOTO OR IMAGE DOCUMENT → RAW IMAGE BLOB
+        // -----------------------------------------
+        if (file.mime_type?.startsWith("image/")) {
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
 
-        if (!res.ok) {
-          console.error("BLOB FETCH ERROR:", res.status);
-          setSrc(file.thumbnail_link || file.preview_link || null);
+          if (!res.ok) throw new Error("Image download failed");
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+
+          if (!cancelled) {
+            if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+            urlRef.current = url;
+            setSrc(url);
+          }
           return;
         }
 
-        const blob = await res.blob();
-        const objectUrl = URL.createObjectURL(blob);
+        // -----------------------------------------
+        // PDF → PNG EXPORT (FIRST PAGE PREVIEW)
+        // -----------------------------------------
+        if (file.mime_type === "application/pdf") {
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
 
-        if (!cancelled) {
-          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-          urlRef.current = objectUrl;
-          setSrc(objectUrl);
-        } else {
-          URL.revokeObjectURL(objectUrl);
+          if (!res.ok) throw new Error("PDF export failed");
+
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+
+          if (!cancelled) {
+            if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+            urlRef.current = url;
+            setSrc(url);
+          }
+          return;
         }
-      } catch (err) {
-        console.error("BLOB FAIL:", err);
+
+        // -----------------------------------------
+        // OTHER DOCUMENT TYPES (fallback)
+        // -----------------------------------------
+        setSrc(file.thumbnail_link || file.preview_link || null);
+      } catch (e) {
+        console.error("Preview load error:", e);
         setSrc(file.thumbnail_link || file.preview_link || null);
       } finally {
         if (!cancelled) setLoading(false);
@@ -73,48 +103,12 @@ function useDriveImageBlob(file: TripFile | null) {
         urlRef.current = null;
       }
     };
-  }, [file?.drive_file_id, file?.thumbnail_link, file?.preview_link]);
+  }, [file?.drive_file_id, file?.mime_type]);
 
   return { src, loading };
 }
 
-/**
- * PDF thumbnail loader
- */
-function usePdfThumbnail(file: TripFile | null) {
-  const [thumb, setThumb] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function load() {
-      if (!file) return;
-      if (file.mime_type !== "application/pdf") return;
-      if (!file.drive_file_id) return;
-
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.provider_token;
-      if (!token) return;
-
-      const metaRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (!metaRes.ok) return;
-      const meta = await metaRes.json();
-
-      if (meta.thumbnailLink) {
-        const hd = meta.thumbnailLink.replace("=s220", "=s800");
-        setThumb(hd);
-      }
-    }
-
-    load();
-  }, [file?.drive_file_id, file?.mime_type]);
-
-  return thumb;
-}
-
-// --------------------------------------------------------
+// ---------------------------------------------------------
 
 interface FileCardProps {
   file: TripFile;
@@ -136,18 +130,12 @@ export default function FileCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  const { src, loading } = useDriveFilePreview(file);
+
   const isPhoto = file.type === "photo";
-  const isImageDoc =
-    file.type === "document" && file.mime_type?.startsWith("image/");
+  const isImageFile =
+    file.mime_type?.startsWith("image/") || file.type === "photo";
   const isPdf = file.mime_type === "application/pdf";
-
-  // BLOB csak képekhez
-  const { src: blobSrc, loading: blobLoading } = useDriveImageBlob(
-    isPhoto || isImageDoc ? file : null
-  );
-
-  // PDF előnézet Drive-ból
-  const pdfThumb = usePdfThumbnail(isPdf ? file : null);
 
   const menuToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -155,120 +143,50 @@ export default function FileCard({
   };
 
   useEffect(() => {
-    function close(e: Event) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node))
+    function handleClose(e: Event) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+      }
     }
-    document.addEventListener("mousedown", close);
-    document.addEventListener("touchstart", close);
+    document.addEventListener("mousedown", handleClose);
+    document.addEventListener("touchstart", handleClose);
     return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("touchstart", close);
+      document.removeEventListener("mousedown", handleClose);
+      document.removeEventListener("touchstart", handleClose);
     };
   }, []);
 
-  // --------------------------------------------------------
-  // PHOTO CARD
-  // --------------------------------------------------------
-  if (isPhoto) {
-    return (
-      <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition">
-        <button
-          type="button"
-          onClick={onPreviewClick}
-          className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
-        >
-          {blobLoading && !blobSrc ? (
-            <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-              Betöltés…
-            </div>
-          ) : blobSrc ? (
-            <img
-              src={blobSrc}
-              alt={file.name}
-              className="h-full w-full object-cover group-hover:scale-[1.02] transition-transform"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-              Nincs előnézet
-            </div>
-          )}
-        </button>
-
-        {canManage && (
-          <div ref={menuRef} className="absolute right-2 top-2 z-20">
-            <button
-              type="button"
-              onClick={menuToggle}
-              className="rounded-full bg-white/90 p-1 shadow-sm"
-            >
-              ⋮
-            </button>
-
-            {menuOpen && (
-              <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-xl shadow-md text-sm">
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onRename();
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-100"
-                >
-                  Átnevezés
-                </button>
-
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete();
-                  }}
-                  className="w-full px-3 py-2 text-left text-red-600 hover:bg-red-50"
-                >
-                  Törlés
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // --------------------------------------------------------
-  // DOCUMENT CARD
-  // --------------------------------------------------------
-
-  // GRID ELŐNÉZET LOGIKA
-  let previewSrc: string | null = null;
-
-  if (isImageDoc) {
-    previewSrc = blobSrc || file.thumbnail_link || file.preview_link || null;
-  } else if (isPdf) {
-    previewSrc = pdfThumb || file.thumbnail_link || null;
-  } else {
-    previewSrc = file.thumbnail_link || file.preview_link || null;
-  }
-
   return (
-    <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition">
+    <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
+      {/* PREVIEW BLOCK */}
       <button
         type="button"
         onClick={onPreviewClick}
-        className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
+        className="block w-full overflow-hidden rounded-2xl 
+        h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
       >
-        {previewSrc ? (
+        {loading ? (
+          <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+            Betöltés...
+          </div>
+        ) : src ? (
           <img
-            src={previewSrc}
+            src={src}
             alt={file.name}
-            className="h-full w-full object-cover"
+            className={`h-full w-full ${
+              isImageFile || isPdf
+                ? "object-cover"
+                : "object-contain p-6 bg-slate-50"
+            }`}
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-slate-500">
+          <div className="flex h-full w-full items-center justify-center text-slate-500">
             {getFileIcon(file)}
           </div>
         )}
       </button>
 
+      {/* MENU */}
       {canManage && (
         <div ref={menuRef} className="absolute right-2 top-2 z-20">
           <button
@@ -280,7 +198,7 @@ export default function FileCard({
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-md text-sm">
+            <div className="absolute right-0 mt-1 w-48 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
               {onOpen && (
                 <button
                   onClick={() => {
