@@ -1,20 +1,79 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
+import { supabase } from "@/lib/supabaseClient";
 
 /**
- * PROXY — nagy kép URL
- * Mindig működik, minden böngészőben,
- * mert nem közvetlenül a Google Drive-ot hívja.
+ * Blob-alapú image loader lightboxhoz
  */
-function getProxyFullImage(file: TripFile): string {
-  if (file.drive_file_id) {
-    return `/api/drive-image?fileId=${file.drive_file_id}`;
-  }
-  return file.preview_link || file.thumbnail_link || "";
+function useDriveBlobImage(file: TripFile | null) {
+  const [src, setSrc] = useState<string | null>(null);
+  const urlRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      if (!file?.drive_file_id) {
+        setSrc(file?.preview_link || file?.thumbnail_link || null);
+        return;
+      }
+
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.provider_token;
+
+        if (!token) {
+          setSrc(file.preview_link || file.thumbnail_link || null);
+          return;
+        }
+
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!res.ok) {
+          console.error("LIGHTBOX BLOB ERROR", res.status);
+          setSrc(file.preview_link || file.thumbnail_link || null);
+          return;
+        }
+
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+
+        urlRef.current = objectUrl;
+        setSrc(objectUrl);
+      } catch (err) {
+        console.error("LIGHTBOX BLOB UNEXPECTED ERROR", err);
+        setSrc(file?.preview_link || file?.thumbnail_link || null);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    };
+  }, [file?.drive_file_id]);
+
+  return src;
 }
 
 type PhotosSectionProps = {
@@ -37,7 +96,7 @@ type PhotosSectionProps = {
   currentUserId?: string | null;
 };
 
-const PhotosSection: React.FC<PhotosSectionProps> = ({
+export default function PhotosSection({
   photoFiles,
   loadingFiles,
   filesError,
@@ -48,7 +107,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
   handleRenameFile,
   handleDeleteFile,
   currentUserId,
-}) => {
+}: PhotosSectionProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [isZoomed, setIsZoomed] = useState(false);
   const [lastTap, setLastTap] = useState<number | null>(null);
@@ -110,14 +169,16 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
     const now = Date.now();
 
     if (lastTap && now - lastTap < 300) {
-      setIsZoomed(!isZoomed);
-      if (isZoomed) resetPosition();
+      const nextZoom = !isZoomed;
+      setIsZoomed(nextZoom);
+      if (!nextZoom) resetPosition();
     }
 
     setLastTap(now);
   };
 
   const current = lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
+  const lightboxSrc = useDriveBlobImage(current);
 
   return (
     <>
@@ -194,23 +255,26 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
                 dragElastic={0.2}
                 onDragEnd={handleDragEnd}
               >
-                <motion.img
-                  key={current.id}
-                  src={getProxyFullImage(current)}
-                  alt={current.name}
-                  referrerPolicy="no-referrer"
-                  className="max-h-[70vh] w-auto rounded-xl object-contain"
-                  style={{ scale: isZoomed ? 2 : 1 }}
-                  animate={controls}
-                  drag={isZoomed}
-                  dragConstraints={
-                    isZoomed
-                      ? { left: -150, right: 150, top: -150, bottom: 150 }
-                      : undefined
-                  }
-                  dragMomentum={false}
-                  onClick={handleImageTap}
-                />
+                {lightboxSrc ? (
+                  <motion.img
+                    key={current.id}
+                    src={lightboxSrc}
+                    alt={current.name}
+                    className="max-h-[70vh] w-auto rounded-xl object-contain"
+                    style={{ scale: isZoomed ? 2 : 1 }}
+                    animate={controls}
+                    drag={isZoomed}
+                    dragConstraints={
+                      isZoomed
+                        ? { left: -150, right: 150, top: -150, bottom: 150 }
+                        : undefined
+                    }
+                    dragMomentum={false}
+                    onClick={handleImageTap}
+                  />
+                ) : (
+                  <div className="text-white text-xs">Betöltés...</div>
+                )}
               </motion.div>
 
               <button
@@ -235,6 +299,4 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
       )}
     </>
   );
-};
-
-export default PhotosSection;
+}
