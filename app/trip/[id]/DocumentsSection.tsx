@@ -25,13 +25,19 @@ type DocumentsSectionProps = {
   currentUserId?: string | null;
 };
 
-// Lightbox kép URL doksikhoz
+// Lightbox kép URL doksikhoz – stabil Drive thumb
 function getDocumentLightboxSrc(file: TripFile): string {
-  if (file.drive_file_id) {
-    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
+  let src = file.thumbnail_link || "";
+
+  if (src && /=s\d+$/.test(src)) {
+    src = src.replace(/=s\d+$/, "=w1600");
   }
-  if (file.thumbnail_link) return file.thumbnail_link;
-  return file.preview_link || "";
+
+  if (!src && file.preview_link) {
+    src = file.preview_link;
+  }
+
+  return src;
 }
 
 const DocumentsSection: React.FC<DocumentsSectionProps> = ({
@@ -113,7 +119,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       const nextZoom = !isZoomed;
       setIsZoomed(nextZoom);
       if (!nextZoom) {
-        // zoom ki → pozíció reset
         resetPosition();
       }
     }
@@ -229,8 +234,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           />
 
           <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
-            
-
             <div className="relative flex items-center justify-between">
               {/* balra nyíl (desktop) */}
               <button

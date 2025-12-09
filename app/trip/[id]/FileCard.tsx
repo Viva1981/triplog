@@ -27,16 +27,15 @@ export default function FileCard({
   const isPhoto = file.type === "photo";
 
   // ---------------- STABIL THUMBNAIL LOGIKA ----------------
-  // Régi: drive.google.com/thumbnail?id=... → redirect, CORB, törött képek
-  // Új: mindig a Drive API által adott thumbnail_link-et használjuk (lh3.googleusercontent.com)
+  // 1) Első mindig a Drive API-ból jövő thumbnail_link (lh3.googleusercontent.com)
   let thumbSrc: string | undefined = file.thumbnail_link || undefined;
 
-  // Ha a Drive s220-as thumbot ad, feljebb skálázzuk s400-ra (ugyanazon a domainen, biztonságos)
-  if (thumbSrc) {
+  // 2) Ha klasszikus "=s###" a vége, skálázzuk kicsit nagyobbra (=s400)
+  if (thumbSrc && /=s\d+$/.test(thumbSrc)) {
     thumbSrc = thumbSrc.replace(/=s\d+$/, "=s400");
   }
 
-  // Ha még mindig nincs semmi és fotó, utolsó fallbackként próbálkozhatunk preview_link-kel
+  // 3) Utolsó fallback CSAK fotóra: preview_link (ez néha dinamikus viewer, ezért csak legvégén)
   if (!thumbSrc && isPhoto) {
     thumbSrc = file.preview_link || undefined;
   }
@@ -51,14 +50,12 @@ export default function FileCard({
     }
 
     function handleScroll() {
-      // bármilyen scroll → zárjuk a menüt
       setMenuOpen(false);
     }
 
     if (menuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("touchstart", handleClickOutside);
-      // capture=true, hogy belső scroll is triggereljen
       window.addEventListener("scroll", handleScroll, true);
     }
 
@@ -99,10 +96,9 @@ md:aspect-square"
           )}
         </button>
 
-        {/* KEBAB MENU – egységes dizájn */}
+        {/* KEBAB MENU */}
         {canManage && (
           <div ref={menuRef} className="absolute right-2 top-2 z-10">
-            {/* kebab button */}
             <button
               type="button"
               onClick={(e) => {
@@ -114,7 +110,6 @@ md:aspect-square"
               <span className="text-xl leading-none">⋮</span>
             </button>
 
-            {/* menu panel */}
             {menuOpen && (
               <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
                 {onOpen && (

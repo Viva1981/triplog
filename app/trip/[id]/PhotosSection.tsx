@@ -27,11 +27,20 @@ type PhotosSectionProps = {
 
 // Lightbox kép URL – stabil Drive thumb
 function getPhotoLightboxSrc(file: TripFile): string {
-  if (file.drive_file_id) {
-    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
+  // 1) Ha van thumbnail_link, azt használjuk (Drive API)
+  let src = file.thumbnail_link || "";
+
+  // 2) Ha klasszikus "=s###" a vége, skálázzuk fel nagyobbra
+  if (src && /=s\d+$/.test(src)) {
+    src = src.replace(/=s\d+$/, "=w1600");
   }
-  if (file.thumbnail_link) return file.thumbnail_link;
-  return file.preview_link || "";
+
+  // 3) Ha nincs thumbnail_link, utolsó fallback a preview_link
+  if (!src && file.preview_link) {
+    src = file.preview_link;
+  }
+
+  return src;
 }
 
 const PhotosSection: React.FC<PhotosSectionProps> = ({
@@ -113,7 +122,6 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
       const nextZoom = !isZoomed;
       setIsZoomed(nextZoom);
       if (!nextZoom) {
-        // zoom ki → pozíció reset
         resetPosition();
       }
     }
@@ -222,8 +230,6 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
           />
 
           <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
-            
-
             <div className="relative flex items-center justify-between">
               {/* balra nyíl (desktop) */}
               <button
