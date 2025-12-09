@@ -5,8 +5,21 @@ import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 
-// Dokumentum lightbox képe → mindig preview_link
+/**
+ * Egységes dokumentum lightbox kép URL
+ * – elsődleges: drive_file_id → Drive thumbnail (1600px)
+ * – fallback: meglévő thumbnail_link
+ * – végső fallback: preview_link
+ */
 function getDocumentLightboxSrc(file: TripFile): string {
+  if (file.drive_file_id) {
+    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
+  }
+
+  if (file.thumbnail_link?.includes("drive.google.com/thumbnail")) {
+    return file.thumbnail_link.replace("sz=w400", "sz=w1600");
+  }
+
   return file.preview_link || file.thumbnail_link || "";
 }
 
@@ -62,7 +75,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   };
 
   const openLightbox = (index: number) => {
-    if (docFiles.length === 0) return;
     setLightboxIndex(index);
     setIsZoomed(false);
     resetPosition();
@@ -75,7 +87,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   };
 
   const showPrev = () => {
-    if (lightboxIndex === null || docFiles.length === 0) return;
+    if (lightboxIndex === null) return;
     setLightboxIndex((prev) =>
       prev === 0 ? docFiles.length - 1 : (prev as number) - 1
     );
@@ -84,7 +96,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   };
 
   const showNext = () => {
-    if (lightboxIndex === null || docFiles.length === 0) return;
+    if (lightboxIndex === null) return;
     setLightboxIndex((prev) =>
       prev === docFiles.length - 1 ? 0 : (prev as number) + 1
     );
@@ -92,7 +104,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     resetPosition();
   };
 
-  // Swipe
   const handleDragEnd = (_: any, info: PanInfo) => {
     if (isZoomed) return;
 
@@ -101,7 +112,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     else if (info.offset.x < -threshold) showNext();
   };
 
-  // Double tap → zoom
   const handleImageTap = () => {
     const now = Date.now();
 
@@ -127,7 +137,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               Dokumentumok
             </h2>
             <p className="text-xs text-slate-500">
-              Dokumentumok a Drive-ban tárolódnak.
+              A dokumentumok a Drive-ban tárolódnak.
             </p>
           </div>
 
@@ -159,12 +169,14 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                   canManage={canManage}
                   onPreviewClick={() => openLightbox(index)}
                   onOpen={() => {
-                    if (file.preview_link) {
+                    if (file.drive_file_id) {
                       window.open(
-                        file.preview_link,
+                        `https://drive.google.com/file/d/${file.drive_file_id}/view?usp=drivesdk`,
                         "_blank",
                         "noopener,noreferrer"
                       );
+                    } else if (file.preview_link) {
+                      window.open(file.preview_link, "_blank");
                     }
                   }}
                   onRename={() => handleRenameFile(file)}
@@ -189,7 +201,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
           <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
             <div className="relative flex items-center justify-between">
-              {/* Balra */}
               <button
                 onClick={showPrev}
                 className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
@@ -197,7 +208,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 ◀
               </button>
 
-              {/* Kép */}
               <motion.div
                 className="relative flex flex-1 items-center justify-center"
                 drag={isZoomed ? false : "x"}
@@ -224,7 +234,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 />
               </motion.div>
 
-              {/* Jobbra */}
               <button
                 onClick={showNext}
                 className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
@@ -233,7 +242,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               </button>
             </div>
 
-            {/* HUD */}
             {!isZoomed && (
               <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex justify-between px-4 text-[11px] text-slate-200">
                 <span>{current.name}</span>

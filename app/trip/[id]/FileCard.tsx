@@ -4,16 +4,29 @@ import { useState, useRef, useEffect } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import { getFileIcon } from "@/lib/trip/fileIcons";
 
+/**
+ * Thumbnail generátor gridhez
+ * Elsődleges: Drive thumbnail (400px)
+ * Fallback: régi preview_link
+ */
+function getThumbnailSrc(file: TripFile): string {
+  if (file.drive_file_id) {
+    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w400`;
+  }
+
+  if (file.thumbnail_link) {
+    return file.thumbnail_link.replace("=s220", "=s400");
+  }
+
+  return file.preview_link || "";
+}
+
 interface FileCardProps {
   file: TripFile;
   canManage: boolean;
   onRename: () => void;
   onDelete: () => void;
-
-  // Lightbox / preview
   onPreviewClick?: () => void;
-
-  // Dokumentum: "Megnyitás Drive-ban"
   onOpen?: () => void;
 }
 
@@ -30,23 +43,7 @@ export default function FileCard({
 
   const isPhoto = file.type === "photo";
 
-  // ---------------- THUMBNAIL LOGIKA ----------------
-
-  let thumbSrc: string | undefined = file.thumbnail_link || undefined;
-
-  // Google-féle =s220 vége → emeljük 400-ra
-  if (thumbSrc && /=s\d+$/.test(thumbSrc)) {
-    thumbSrc = thumbSrc.replace(/=s\d+$/, "=s400");
-  }
-
-  // Ha fotó és nincs thumbnail_link, essünk vissza a preview_link-re
-  if (!thumbSrc && isPhoto) {
-    thumbSrc = file.preview_link || undefined;
-  }
-
-  // ---------------------------------------------------
-
-  // ------------- CLICK OUTSIDE MENÜ BEZÁRÁS -------------
+  const thumbSrc = getThumbnailSrc(file);
 
   useEffect(() => {
     function handleClickOutside(e: Event) {
@@ -77,7 +74,6 @@ export default function FileCard({
   if (isPhoto) {
     return (
       <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-        {/* Kép – ez nyitja a lightboxot */}
         <button
           type="button"
           onClick={onPreviewClick}
@@ -98,7 +94,6 @@ export default function FileCard({
           )}
         </button>
 
-        {/* Kebab menü */}
         {canManage && (
           <div ref={menuRef} className="absolute right-2 top-2 z-20">
             <button
@@ -145,29 +140,26 @@ export default function FileCard({
 
   // ---------------- DOCUMENT CARD ----------------
 
-  const docPreviewContent = thumbSrc ? (
-    <img
-      src={thumbSrc}
-      alt={file.name}
-      referrerPolicy="no-referrer"
-      className="h-full w-full object-cover"
-    />
-  ) : (
-    <div className="flex h-full w-full items-center justify-center text-slate-500">
-      {getFileIcon(file)}
-    </div>
-  );
-
   return (
     <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-      {/* Kártya katt → lightbox / preview */}
       <button
         type="button"
         onClick={onPreviewClick}
         className="block w-full overflow-hidden rounded-2xl 
         h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
       >
-        {docPreviewContent}
+        {thumbSrc ? (
+          <img
+            src={thumbSrc}
+            alt={file.name}
+            referrerPolicy="no-referrer"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-slate-500">
+            {getFileIcon(file)}
+          </div>
+        )}
       </button>
 
       {canManage && (
