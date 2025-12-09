@@ -9,7 +9,8 @@ interface FileCardProps {
   canManage: boolean;
   onRename: () => void;
   onDelete: () => void;
-  onOpen?: () => void;
+
+  // !!! EZ A FONTOS !!!
   onPreviewClick?: () => void;
 }
 
@@ -18,7 +19,6 @@ export default function FileCard({
   canManage,
   onRename,
   onDelete,
-  onOpen,
   onPreviewClick,
 }: FileCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -26,22 +26,22 @@ export default function FileCard({
 
   const isPhoto = file.type === "photo";
 
-  // ---------------- STABIL THUMBNAIL LOGIKA ----------------
-  // 1) Első mindig a Drive API-ból jövő thumbnail_link (lh3.googleusercontent.com)
+  // ---------------- THUMBNAIL LOGIKA ----------------
+
   let thumbSrc: string | undefined = file.thumbnail_link || undefined;
 
-  // 2) Ha klasszikus "=s###" a vége, skálázzuk kicsit nagyobbra (=s400)
   if (thumbSrc && /=s\d+$/.test(thumbSrc)) {
     thumbSrc = thumbSrc.replace(/=s\d+$/, "=s400");
   }
 
-  // 3) Utolsó fallback CSAK fotóra: preview_link (ez néha dinamikus viewer, ezért csak legvégén)
   if (!thumbSrc && isPhoto) {
     thumbSrc = file.preview_link || undefined;
   }
-  // ---------------------------------------------------------
 
-  // ---------------- CLICK-OUTSIDE + SCROLL-ON-CLOSE ----------------
+  // ---------------------------------------------------
+
+  // ------------- CLICK OUTSIDE MENÜ BEZÁRÁS -------------
+
   useEffect(() => {
     function handleClickOutside(e: Event) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -66,21 +66,18 @@ export default function FileCard({
     };
   }, [menuOpen]);
 
-  // ---------------------------------------------------------
-  // ---------------------- PHOTO CARD -----------------------
-  // ---------------------------------------------------------
+  // ---------------- PHOTO CARD ----------------
 
   if (isPhoto) {
     return (
       <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-        {/* clickable image */}
+        
+        {/* IMAGE PREVIEW - THIS OPENS LIGHTBOX */}
         <button
           type="button"
           onClick={onPreviewClick}
           className="block w-full overflow-hidden rounded-2xl 
-h-40 sm:h-48 
-md:h-[200px] lg:h-[220px] xl:h-[240px] 
-md:aspect-square"
+          h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
         >
           {thumbSrc ? (
             <img
@@ -98,7 +95,7 @@ md:aspect-square"
 
         {/* KEBAB MENU */}
         {canManage && (
-          <div ref={menuRef} className="absolute right-2 top-2 z-10">
+          <div ref={menuRef} className="absolute right-2 top-2 z-20">
             <button
               type="button"
               onClick={(e) => {
@@ -111,20 +108,7 @@ md:aspect-square"
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
-                {onOpen && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onOpen();
-                    }}
-                    className="w-full px-3 py-2 text-left hover:bg-slate-100"
-                  >
-                    Megnyitás
-                  </button>
-                )}
-
+              <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
                 <button
                   type="button"
                   onClick={() => {
@@ -154,13 +138,9 @@ md:aspect-square"
     );
   }
 
-  // ---------------------------------------------------------
-  // ------------------ DOCUMENT CARD ------------------------
-  // ---------------------------------------------------------
+  // ---------------- DOCUMENT CARD ----------------
 
-  const hasThumb = !!thumbSrc;
-
-  const docPreviewContent = hasThumb ? (
+  const docPreviewContent = thumbSrc ? (
     <img
       src={thumbSrc}
       alt={file.name}
@@ -179,15 +159,13 @@ md:aspect-square"
         type="button"
         onClick={onPreviewClick}
         className="block w-full overflow-hidden rounded-2xl 
-h-40 sm:h-48 
-md:h-[200px] lg:h-[220px] xl:h-[240px] 
-md:aspect-square"
+        h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
       >
         {docPreviewContent}
       </button>
 
       {canManage && (
-        <div ref={menuRef} className="absolute right-2 top-2 z-10">
+        <div ref={menuRef} className="absolute right-2 top-2 z-20">
           <button
             type="button"
             onClick={(e) => {
@@ -200,20 +178,7 @@ md:aspect-square"
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-20">
-              {onOpen && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpen();
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-100"
-                >
-                  Megnyitás
-                </button>
-              )}
-
+            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
               <button
                 type="button"
                 onClick={() => {
