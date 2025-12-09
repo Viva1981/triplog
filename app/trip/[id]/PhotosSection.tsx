@@ -6,13 +6,14 @@ import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 
 // ----------------------
-// LIGHTBOX KÉP FORRÁSA
+// RAW DRIVE IMAGE URL
 // ----------------------
-// 👉 A lightbox mindig a Drive preview_link-et használja.
-// 👉 Ez volt a régi, stabil működés.
-// 👉 Soha nem thumbnail_link, mert az 404-et és CORB hibát dob.
+// 👉 Ez működik <img>-ben, lightboxban, PWA-ban.
+// 👉 A preview_link NEM használható (CORS tiltás miatt).
+// 👉 A thumbnail_link csak kicsi kép, lightboxnak kevés.
 function getPhotoLightboxSrc(file: TripFile): string {
-  return file.preview_link || file.thumbnail_link || "";
+  if (!file.drive_file_id) return file.thumbnail_link || "";
+  return `https://drive.google.com/uc?export=view&id=${file.drive_file_id}`;
 }
 
 type PhotosSectionProps = {
@@ -182,7 +183,6 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
       {/* LIGHTBOX */}
       {current && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-3">
-          {/* bezárás */}
           <button onClick={closeLightbox} className="absolute inset-0" />
 
           <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
