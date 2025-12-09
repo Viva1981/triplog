@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 
 export async function GET(req: Request) {
   try {
@@ -10,17 +11,35 @@ export async function GET(req: Request) {
       return new NextResponse("Missing fileId", { status: 400 });
     }
 
-    // Get Google OAuth token from Supabase session
+    // Create a Supabase server-side client with cookie access
+    const cookieStore = cookies();
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+        },
+      }
+    );
+
+    // Read session from cookies (works server-side!)
     const {
       data: { session },
     } = await supabase.auth.getSession();
 
     const accessToken = session?.provider_token;
+
     if (!accessToken) {
-      return new NextResponse("Missing Google token", { status: 401 });
+      return new NextResponse("Missing Google token (server)", {
+        status: 401,
+      });
     }
 
-    // Fetch the file from Google Drive (binary)
+    // Fetch binary image from Google Drive
     const googleRes = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       {
@@ -37,19 +56,20 @@ export async function GET(req: Request) {
       );
     }
 
-    // Pass through the content-type from Google
-    const contentType = googleRes.headers.get("content-type") ?? "image/jpeg";
+    // Return binary image
+    const contentType =
+      googleRes.headers.get("content-type") ?? "image/jpeg";
     const arrayBuffer = await googleRes.arrayBuffer();
 
     return new NextResponse(arrayBuffer, {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "max-age=3600", // 1 hour caching
+        "Cache-Control": "public, max-age=3600",
       },
     });
-  } catch (err) {
-    console.error("PROXY ERROR:", err);
+  } catch (error) {
+    console.error("PROXY ERROR:", error);
     return new NextResponse("Internal Proxy Error", { status: 500 });
   }
 }
