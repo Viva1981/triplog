@@ -5,15 +5,34 @@ import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 
-// ----------------------
-// RAW DRIVE IMAGE URL
-// ----------------------
-// 👉 Ez működik <img>-ben, lightboxban, PWA-ban.
-// 👉 A preview_link NEM használható (CORS tiltás miatt).
-// 👉 A thumbnail_link csak kicsi kép, lightboxnak kevés.
+/**
+ * Lightbox kép URL
+ *
+ * - Elsődleges: Drive thumbnail nagy méretben (w1600)
+ * - Régi rekordoknál: ha a preview_link / thumbnail_link már thumbnail-es, azt használjuk
+ * - Végső fallback: preview_link vagy thumbnail_link, ha valamiért nincs drive_file_id
+ */
 function getPhotoLightboxSrc(file: TripFile): string {
-  if (!file.drive_file_id) return file.thumbnail_link || "";
-  return `https://drive.google.com/uc?export=view&id=${file.drive_file_id}`;
+  if (!file) return "";
+
+  // 1) Normál eset: van drive_file_id → stabil thumbnail endpoint
+  if (file.drive_file_id) {
+    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
+  }
+
+  // 2) Régi adatok: ha a preview_link már thumbnail-es
+  if (file.preview_link?.includes("drive.google.com/thumbnail")) {
+    return file.preview_link;
+  }
+
+  // 3) Régi adatok: ha a thumbnail_link thumbnail-es
+  if (file.thumbnail_link?.includes("drive.google.com/thumbnail")) {
+    // ha w400 van benne, cseréljük w1600-ra
+    return file.thumbnail_link.replace("sz=w400", "sz=w1600");
+  }
+
+  // 4) Végső fallback – legalább valami kép URL legyen
+  return file.preview_link || file.thumbnail_link || "";
 }
 
 type PhotosSectionProps = {
@@ -120,8 +139,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
     setLastTap(now);
   };
 
-  const current =
-    lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
+  const current = lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
 
   return (
     <>
@@ -167,11 +185,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
                   onPreviewClick={() => openLightbox(index)}
                   onRename={() => handleRenameFile(file)}
                   onDelete={() =>
-                    handleDeleteFile(
-                      file.id,
-                      "photo",
-                      file.drive_file_id
-                    )
+                    handleDeleteFile(file.id, "photo", file.drive_file_id)
                   }
                 />
               );
