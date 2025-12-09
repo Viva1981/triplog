@@ -6,21 +6,14 @@ import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 
 /**
- * Lightbox nagy kép stabil Google Drive thumbnail endpointtal
+ * PROXY — nagy kép URL
+ * Mindig működik, minden böngészőben,
+ * mert nem közvetlenül a Google Drive-ot hívja.
  */
-function getPhotoLightboxSrc(file: TripFile): string {
+function getProxyFullImage(file: TripFile): string {
   if (file.drive_file_id) {
-    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
+    return `/api/drive-image?fileId=${file.drive_file_id}`;
   }
-
-  if (file.thumbnail_link?.includes("drive.google.com/thumbnail")) {
-    return file.thumbnail_link.replace("sz=w400", "sz=w1600");
-  }
-
-  if (file.preview_link?.includes("drive.google.com/thumbnail")) {
-    return file.preview_link;
-  }
-
   return file.preview_link || file.thumbnail_link || "";
 }
 
@@ -117,9 +110,8 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
     const now = Date.now();
 
     if (lastTap && now - lastTap < 300) {
-      const nextZoom = !isZoomed;
-      setIsZoomed(nextZoom);
-      if (!nextZoom) resetPosition();
+      setIsZoomed(!isZoomed);
+      if (isZoomed) resetPosition();
     }
 
     setLastTap(now);
@@ -129,10 +121,13 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
 
   return (
     <>
+      {/* GRID */}
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Fotók</h2>
+            <h2 className="text-base font-semibold text-slate-900">
+              Fotók
+            </h2>
             <p className="text-xs text-slate-500">
               A képek a Drive-ba kerülnek. A TripLog automatikusan beolvassa őket.
             </p>
@@ -177,6 +172,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
         )}
       </section>
 
+      {/* LIGHTBOX */}
       {current && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-3">
           <button onClick={closeLightbox} className="absolute inset-0" />
@@ -185,7 +181,8 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
             <div className="relative flex items-center justify-between">
               <button
                 onClick={showPrev}
-                className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
+                className="hidden h-8 w-8 md:flex items-center 
+                justify-center rounded-full bg-black/60 text-white hover:bg-black"
               >
                 ◀
               </button>
@@ -199,7 +196,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
               >
                 <motion.img
                   key={current.id}
-                  src={getPhotoLightboxSrc(current)}
+                  src={getProxyFullImage(current)}
                   alt={current.name}
                   referrerPolicy="no-referrer"
                   className="max-h-[70vh] w-auto rounded-xl object-contain"
@@ -218,7 +215,8 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
 
               <button
                 onClick={showNext}
-                className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
+                className="hidden h-8 w-8 md:flex items-center 
+                justify-center rounded-full bg-black/60 text-white hover:bg-black"
               >
                 ▶
               </button>
