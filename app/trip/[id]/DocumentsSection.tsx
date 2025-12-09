@@ -1,26 +1,77 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
+import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Egységes dokumentum lightbox kép URL
- * – elsődleges: drive_file_id → Drive thumbnail (1600px)
- * – fallback: meglévő thumbnail_link
- * – végső fallback: preview_link
+ * Blob loader dokumentum lightboxhoz (PDF is!)
  */
-function getDocumentLightboxSrc(file: TripFile): string {
-  if (file.drive_file_id) {
-    return `https://drive.google.com/thumbnail?id=${file.drive_file_id}&sz=w1600`;
-  }
+function useDriveBlob(file: TripFile | null) {
+  const [src, setSrc] = useState<string | null>(null);
+  const urlRef = React.useRef<string | null>(null);
 
-  if (file.thumbnail_link?.includes("drive.google.com/thumbnail")) {
-    return file.thumbnail_link.replace("sz=w400", "sz=w1600");
-  }
+  useEffect(() => {
+    let cancelled = false;
 
-  return file.preview_link || file.thumbnail_link || "";
+    async function load() {
+      if (!file?.drive_file_id) {
+        setSrc(file?.thumbnail_link || file?.preview_link || null);
+        return;
+      }
+
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.provider_token;
+
+        if (!token) {
+          setSrc(file.thumbnail_link || file.preview_link || null);
+          return;
+        }
+
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (!res.ok) {
+          console.error("BLOB DOC ERROR", res.status);
+          setSrc(file.thumbnail_link || file.preview_link || null);
+          return;
+        }
+
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+
+        urlRef.current = objectUrl;
+        setSrc(objectUrl);
+      } catch (e) {
+        console.error("DOC BLOB UNEXPECTED", e);
+        setSrc(file?.preview_link || file?.thumbnail_link || null);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    };
+  }, [file?.drive_file_id]);
+
+  return src;
 }
 
 type DocumentsSectionProps = {
@@ -43,7 +94,7 @@ type DocumentsSectionProps = {
   currentUserId?: string | null;
 };
 
-const DocumentsSection: React.FC<DocumentsSectionProps> = ({
+export default function DocumentsSection({
   docFiles,
   loadingFiles,
   filesError,
@@ -54,7 +105,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   handleRenameFile,
   handleDeleteFile,
   currentUserId,
-}) => {
+}: DocumentsSectionProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [isZoomed, setIsZoomed] = useState(false);
   const [lastTap, setLastTap] = useState<number | null>(null);
@@ -114,18 +165,16 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   const handleImageTap = () => {
     const now = Date.now();
-
     if (lastTap && now - lastTap < 300) {
-      const nextZoom = !isZoomed;
-      setIsZoomed(nextZoom);
-      if (!nextZoom) resetPosition();
+      const next = !isZoomed;
+      setIsZoomed(next);
+      if (!next) resetPosition();
     }
-
     setLastTap(now);
   };
 
-  const current =
-    lightboxIndex !== null ? docFiles[lightboxIndex] : null;
+  const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
+  const lightboxSrc = useDriveBlob(current);
 
   return (
     <>
@@ -137,7 +186,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               Dokumentumok
             </h2>
             <p className="text-xs text-slate-500">
-              A dokumentumok a Drive-ban tárolódnak.
+              A dokumentumok Drive-ban tárolódnak
             </p>
           </div>
 
@@ -171,12 +220,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                   onOpen={() => {
                     if (file.drive_file_id) {
                       window.open(
-                        `https://drive.google.com/file/d/${file.drive_file_id}/view?usp=drivesdk`,
+                        `https://drive.google.com/file/d/${file.drive_file_id}/view`,
                         "_blank",
                         "noopener,noreferrer"
                       );
-                    } else if (file.preview_link) {
-                      window.open(file.preview_link, "_blank");
                     }
                   }}
                   onRename={() => handleRenameFile(file)}
@@ -215,23 +262,26 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 dragElastic={0.2}
                 onDragEnd={handleDragEnd}
               >
-                <motion.img
-                  key={current.id}
-                  src={getDocumentLightboxSrc(current)}
-                  alt={current.name}
-                  referrerPolicy="no-referrer"
-                  className="max-h-[70vh] w-auto rounded-xl object-contain bg-white/5"
-                  style={{ scale: isZoomed ? 2 : 1 }}
-                  animate={controls}
-                  drag={isZoomed}
-                  dragConstraints={
-                    isZoomed
-                      ? { left: -150, right: 150, top: -150, bottom: 150 }
-                      : undefined
-                  }
-                  dragMomentum={false}
-                  onClick={handleImageTap}
-                />
+                {lightboxSrc ? (
+                  <motion.img
+                    key={current.id}
+                    src={lightboxSrc}
+                    alt={current.name}
+                    className="max-h-[70vh] w-auto rounded-xl object-contain bg-white/5"
+                    style={{ scale: isZoomed ? 2 : 1 }}
+                    animate={controls}
+                    drag={isZoomed}
+                    dragConstraints={
+                      isZoomed
+                        ? { left: -150, right: 150, top: -150, bottom: -150 }
+                        : undefined
+                    }
+                    dragMomentum={false}
+                    onClick={handleImageTap}
+                  />
+                ) : (
+                  <div className="text-white text-xs">Betöltés...</div>
+                )}
               </motion.div>
 
               <button
@@ -255,6 +305,4 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       )}
     </>
   );
-};
-
-export default DocumentsSection;
+}
