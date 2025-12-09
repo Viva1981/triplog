@@ -5,6 +5,11 @@ import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 
+// Dokumentum lightbox képe → mindig preview_link
+function getDocumentLightboxSrc(file: TripFile): string {
+  return file.preview_link || file.thumbnail_link || "";
+}
+
 type DocumentsSectionProps = {
   docFiles: TripFile[];
   loadingFiles: boolean;
@@ -24,21 +29,6 @@ type DocumentsSectionProps = {
   ) => Promise<void> | void;
   currentUserId?: string | null;
 };
-
-// Lightbox kép URL doksikhoz – stabil Drive thumb
-function getDocumentLightboxSrc(file: TripFile): string {
-  let src = file.thumbnail_link || "";
-
-  if (src && /=s\d+$/.test(src)) {
-    src = src.replace(/=s\d+$/, "=w1600");
-  }
-
-  if (!src && file.preview_link) {
-    src = file.preview_link;
-  }
-
-  return src;
-}
 
 const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   docFiles,
@@ -102,7 +92,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     resetPosition();
   };
 
-  // Swipe csak zoomolatlan állapotban
+  // Swipe
   const handleDragEnd = (_: any, info: PanInfo) => {
     if (isZoomed) return;
 
@@ -111,16 +101,14 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     else if (info.offset.x < -threshold) showNext();
   };
 
-  // Dupla tap → zoom in/out
+  // Double tap → zoom
   const handleImageTap = () => {
     const now = Date.now();
 
     if (lastTap && now - lastTap < 300) {
       const nextZoom = !isZoomed;
       setIsZoomed(nextZoom);
-      if (!nextZoom) {
-        resetPosition();
-      }
+      if (!nextZoom) resetPosition();
     }
 
     setLastTap(now);
@@ -131,7 +119,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   return (
     <>
-      {/* GRID SZEKCIÓ */}
+      {/* GRID */}
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -139,13 +127,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               Dokumentumok
             </h2>
             <p className="text-xs text-slate-500">
-              Dokumentumokat tölthetsz fel közvetlenül az eszközödről – a TripLog automatikusan elmenti az utazás Google Drive mappájába.
+              Dokumentumok a Drive-ban tárolódnak.
             </p>
-            {docFiles.length > 0 && (
-              <p className="mt-1 text-[11px] text-slate-400">
-                Összesen {docFiles.length} dokumentum.
-              </p>
-            )}
           </div>
 
           <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
@@ -159,39 +142,15 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           </label>
         </div>
 
-        {docError && (
-          <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-            {docError}
-          </div>
-        )}
-
-        {docSuccess && (
-          <div className="mb-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-            {docSuccess}
-          </div>
-        )}
-
-        {filesError && (
-          <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-            {filesError}
-          </div>
-        )}
-
         {loadingFiles ? (
-          <div className="mt-4 text-xs text-slate-500">
-            Dokumentumok betöltése...
-          </div>
+          <div className="text-xs text-slate-500">Betöltés...</div>
         ) : docFiles.length === 0 ? (
-          <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
-            Még nincs dokumentum ehhez az utazáshoz.
-          </div>
+          <div className="text-xs text-slate-400">Nincs dokumentum.</div>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+          <div className="mt-4 grid grid-cols-2 gap-4">
             {docFiles.map((file, index) => {
               const canManage =
-                !!currentUserId &&
-                !!file.user_id &&
-                file.user_id === currentUserId;
+                !!currentUserId && file.user_id === currentUserId;
 
               return (
                 <FileCard
@@ -226,25 +185,19 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       {/* LIGHTBOX */}
       {current && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-3">
-          {/* háttérre kattintva zár */}
-          <button
-            type="button"
-            onClick={closeLightbox}
-            className="absolute inset-0"
-          />
+          <button onClick={closeLightbox} className="absolute inset-0" />
 
           <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
             <div className="relative flex items-center justify-between">
-              {/* balra nyíl (desktop) */}
+              {/* Balra */}
               <button
-                type="button"
                 onClick={showPrev}
-                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white hover:bg-black md:flex"
+                className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
               >
                 ◀
               </button>
 
-              {/* kép area – swipe / pan / zoom */}
+              {/* Kép */}
               <motion.div
                 className="relative flex flex-1 items-center justify-center"
                 drag={isZoomed ? false : "x"}
@@ -263,7 +216,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                   drag={isZoomed}
                   dragConstraints={
                     isZoomed
-                      ? { left: -120, right: 120, top: -120, bottom: 120 }
+                      ? { left: -150, right: 150, top: -150, bottom: 150 }
                       : undefined
                   }
                   dragMomentum={false}
@@ -271,22 +224,21 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 />
               </motion.div>
 
-              {/* jobbra nyíl (desktop) */}
+              {/* Jobbra */}
               <button
-                type="button"
                 onClick={showNext}
-                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white hover:bg-black md:flex"
+                className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
               >
                 ▶
               </button>
             </div>
 
-            {/* HUD – csak ha nincs zoom */}
+            {/* HUD */}
             {!isZoomed && (
-              <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex items-center justify-between px-4 text-[11px] text-slate-200">
-                <span className="truncate pr-2">{current.name}</span>
+              <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex justify-between px-4 text-[11px] text-slate-200">
+                <span>{current.name}</span>
                 <span>
-                  {lightboxIndex! + 1} / {docFiles.length}
+                  {lightboxIndex! + 1}/{docFiles.length}
                 </span>
               </div>
             )}

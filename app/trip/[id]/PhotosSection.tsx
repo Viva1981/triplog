@@ -5,6 +5,16 @@ import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 
+// ----------------------
+// LIGHTBOX KÉP FORRÁSA
+// ----------------------
+// 👉 A lightbox mindig a Drive preview_link-et használja.
+// 👉 Ez volt a régi, stabil működés.
+// 👉 Soha nem thumbnail_link, mert az 404-et és CORB hibát dob.
+function getPhotoLightboxSrc(file: TripFile): string {
+  return file.preview_link || file.thumbnail_link || "";
+}
+
 type PhotosSectionProps = {
   photoFiles: TripFile[];
   loadingFiles: boolean;
@@ -24,24 +34,6 @@ type PhotosSectionProps = {
   ) => Promise<void> | void;
   currentUserId?: string | null;
 };
-
-// Lightbox kép URL – stabil Drive thumb
-function getPhotoLightboxSrc(file: TripFile): string {
-  // 1) Ha van thumbnail_link, azt használjuk (Drive API)
-  let src = file.thumbnail_link || "";
-
-  // 2) Ha klasszikus "=s###" a vége, skálázzuk fel nagyobbra
-  if (src && /=s\d+$/.test(src)) {
-    src = src.replace(/=s\d+$/, "=w1600");
-  }
-
-  // 3) Ha nincs thumbnail_link, utolsó fallback a preview_link
-  if (!src && file.preview_link) {
-    src = file.preview_link;
-  }
-
-  return src;
-}
 
 const PhotosSection: React.FC<PhotosSectionProps> = ({
   photoFiles,
@@ -105,7 +97,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
     resetPosition();
   };
 
-  // Swipe csak zoomolatlan állapotban
+  // Swipe
   const handleDragEnd = (_: any, info: PanInfo) => {
     if (isZoomed) return;
 
@@ -114,16 +106,14 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
     else if (info.offset.x < -threshold) showNext();
   };
 
-  // Dupla tap → zoom in / out
+  // Double tap → zoom
   const handleImageTap = () => {
     const now = Date.now();
 
     if (lastTap && now - lastTap < 300) {
       const nextZoom = !isZoomed;
       setIsZoomed(nextZoom);
-      if (!nextZoom) {
-        resetPosition();
-      }
+      if (!nextZoom) resetPosition();
     }
 
     setLastTap(now);
@@ -134,7 +124,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
 
   return (
     <>
-      {/* GRID SZEKCIÓ */}
+      {/* GRID */}
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -142,14 +132,8 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
               Fotók
             </h2>
             <p className="text-xs text-slate-500">
-              Képeket tölthetsz fel közvetlenül az eszközödről – a TripLog
-              automatikusan elmenti az utazás Google Drive mappájába.
+              A képek a Drive-ba kerülnek. A TripLog automatikusan beolvassa őket.
             </p>
-            {photoFiles.length > 0 && (
-              <p className="mt-1 text-[11px] text-slate-400">
-                Összesen {photoFiles.length} fotó.
-              </p>
-            )}
           </div>
 
           <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
@@ -164,39 +148,15 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
           </label>
         </div>
 
-        {photoError && (
-          <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-            {photoError}
-          </div>
-        )}
-
-        {photoSuccess && (
-          <div className="mb-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-            {photoSuccess}
-          </div>
-        )}
-
-        {filesError && (
-          <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-            {filesError}
-          </div>
-        )}
-
         {loadingFiles ? (
-          <div className="mt-4 text-xs text-slate-500">
-            Fotók betöltése...
-          </div>
+          <div className="text-xs text-slate-500">Betöltés...</div>
         ) : photoFiles.length === 0 ? (
-          <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
-            Még nincs fotó ehhez az utazáshoz.
-          </div>
+          <div className="text-xs text-slate-400">Nincs fotó.</div>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+          <div className="mt-4 grid grid-cols-2 gap-4">
             {photoFiles.map((file, index) => {
               const canManage =
-                !!currentUserId &&
-                !!file.user_id &&
-                file.user_id === currentUserId;
+                !!currentUserId && file.user_id === currentUserId;
 
               return (
                 <FileCard
@@ -222,25 +182,20 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
       {/* LIGHTBOX */}
       {current && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-3">
-          {/* háttérre kattintva zár */}
-          <button
-            type="button"
-            onClick={closeLightbox}
-            className="absolute inset-0"
-          />
+          {/* bezárás */}
+          <button onClick={closeLightbox} className="absolute inset-0" />
 
           <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
             <div className="relative flex items-center justify-between">
-              {/* balra nyíl (desktop) */}
+              {/* balra */}
               <button
-                type="button"
                 onClick={showPrev}
-                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white hover:bg-black md:flex"
+                className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
               >
                 ◀
               </button>
 
-              {/* kép area – swipe / pan / zoom */}
+              {/* kép */}
               <motion.div
                 className="relative flex flex-1 items-center justify-center"
                 drag={isZoomed ? false : "x"}
@@ -259,7 +214,7 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
                   drag={isZoomed}
                   dragConstraints={
                     isZoomed
-                      ? { left: -120, right: 120, top: -120, bottom: 120 }
+                      ? { left: -150, right: 150, top: -150, bottom: 150 }
                       : undefined
                   }
                   dragMomentum={false}
@@ -267,22 +222,21 @@ const PhotosSection: React.FC<PhotosSectionProps> = ({
                 />
               </motion.div>
 
-              {/* jobbra nyíl (desktop) */}
+              {/* jobbra */}
               <button
-                type="button"
                 onClick={showNext}
-                className="hidden h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white hover:bg-black md:flex"
+                className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
               >
                 ▶
               </button>
             </div>
 
-            {/* HUD – csak ha NINCS zoom */}
+            {/* HUD */}
             {!isZoomed && (
-              <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex items-center justify-between px-4 text-[11px] text-slate-200">
-                <span className="truncate pr-2">{current.name}</span>
+              <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex justify-between px-4 text-[11px] text-slate-200">
+                <span>{current.name}</span>
                 <span>
-                  {lightboxIndex! + 1} / {photoFiles.length}
+                  {lightboxIndex! + 1}/{photoFiles.length}
                 </span>
               </div>
             )}
