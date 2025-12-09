@@ -10,8 +10,11 @@ interface FileCardProps {
   onRename: () => void;
   onDelete: () => void;
 
-  // !!! EZ A FONTOS !!!
+  // Lightbox / preview
   onPreviewClick?: () => void;
+
+  // Dokumentum: "Megnyitás Drive-ban"
+  onOpen?: () => void;
 }
 
 export default function FileCard({
@@ -20,6 +23,7 @@ export default function FileCard({
   onRename,
   onDelete,
   onPreviewClick,
+  onOpen,
 }: FileCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -30,10 +34,12 @@ export default function FileCard({
 
   let thumbSrc: string | undefined = file.thumbnail_link || undefined;
 
+  // Google-féle =s220 vége → emeljük 400-ra
   if (thumbSrc && /=s\d+$/.test(thumbSrc)) {
     thumbSrc = thumbSrc.replace(/=s\d+$/, "=s400");
   }
 
+  // Ha fotó és nincs thumbnail_link, essünk vissza a preview_link-re
   if (!thumbSrc && isPhoto) {
     thumbSrc = file.preview_link || undefined;
   }
@@ -71,8 +77,7 @@ export default function FileCard({
   if (isPhoto) {
     return (
       <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-        
-        {/* IMAGE PREVIEW - THIS OPENS LIGHTBOX */}
+        {/* Kép – ez nyitja a lightboxot */}
         <button
           type="button"
           onClick={onPreviewClick}
@@ -93,7 +98,7 @@ export default function FileCard({
           )}
         </button>
 
-        {/* KEBAB MENU */}
+        {/* Kebab menü */}
         {canManage && (
           <div ref={menuRef} className="absolute right-2 top-2 z-20">
             <button
@@ -155,6 +160,7 @@ export default function FileCard({
 
   return (
     <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
+      {/* Kártya katt → lightbox / preview */}
       <button
         type="button"
         onClick={onPreviewClick}
@@ -178,7 +184,20 @@ export default function FileCard({
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
+            <div className="absolute right-0 mt-1 w-48 rounded-xl border border-slate-200 bg-white text-sm shadow-lg z-30">
+              {onOpen && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpen();
+                  }}
+                  className="w-full px-3 py-2 text-left hover:bg-slate-100"
+                >
+                  Megnyitás Drive-ban
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
