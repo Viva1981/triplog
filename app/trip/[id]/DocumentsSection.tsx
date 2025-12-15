@@ -6,23 +6,23 @@ import FileCard from "./FileCard";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 
-/* ------------------------------------------------------------------ */
-/* SESSION READY HOOK */
-/* ------------------------------------------------------------------ */
+/* =========================================================
+   AUTH READY HOOK
+   ========================================================= */
 function useAuthReady() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let active = true;
+    let alive = true;
 
-    async function check() {
+    async function checkInitial() {
       const { data } = await supabase.auth.getSession();
-      if (active && data.session?.provider_token) {
+      if (alive && data.session?.provider_token) {
         setReady(true);
       }
     }
 
-    check();
+    checkInitial();
 
     const {
       data: { subscription },
@@ -33,7 +33,7 @@ function useAuthReady() {
     });
 
     return () => {
-      active = false;
+      alive = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -41,9 +41,9 @@ function useAuthReady() {
   return ready;
 }
 
-/* ------------------------------------------------------------------ */
-/* DRIVE PREVIEW (IMAGE + PDF → PNG) */
-/* ------------------------------------------------------------------ */
+/* =========================================================
+   DRIVE PREVIEW LOADER (IMAGE + PDF → PNG)
+   ========================================================= */
 function useDrivePreview(file: TripFile | null, enabled: boolean) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +64,7 @@ function useDrivePreview(file: TripFile | null, enabled: boolean) {
         const token = data.session?.provider_token;
         if (!token) return;
 
-        let url: string;
+        let url: string | null = null;
 
         // IMAGE
         if (file.mime_type?.startsWith("image/")) {
@@ -75,7 +75,8 @@ function useDrivePreview(file: TripFile | null, enabled: boolean) {
           const blob = await res.blob();
           url = URL.createObjectURL(blob);
         }
-        // PDF → PNG
+
+        // PDF → PNG EXPORT (FIRST PAGE)
         else if (file.mime_type === "application/pdf") {
           const res = await fetch(
             `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`,
@@ -83,15 +84,15 @@ function useDrivePreview(file: TripFile | null, enabled: boolean) {
           );
           const blob = await res.blob();
           url = URL.createObjectURL(blob);
-        } else {
-          return;
         }
 
-        if (!cancelled) {
+        if (!cancelled && url) {
           if (urlRef.current) URL.revokeObjectURL(urlRef.current);
           urlRef.current = url;
           setSrc(url);
         }
+      } catch (err) {
+        console.error("Drive preview error:", err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -101,16 +102,28 @@ function useDrivePreview(file: TripFile | null, enabled: boolean) {
 
     return () => {
       cancelled = true;
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
     };
   }, [file?.id, enabled]);
 
   return { src, loading };
 }
 
-/* ------------------------------------------------------------------ */
-/* COMPONENT */
-/* ------------------------------------------------------------------ */
+/* =========================================================
+   SKELETON CARD
+   ========================================================= */
+function SkeletonCard() {
+  return (
+    <div className="h-40 sm:h-48 md:h-[200px] rounded-2xl bg-slate-100 animate-pulse" />
+  );
+}
+
+/* =========================================================
+   COMPONENT
+   ========================================================= */
 type Props = {
   docFiles: TripFile[];
   loadingFiles: boolean;
@@ -146,17 +159,26 @@ export default function DocumentsSection({
   const { src: lightboxSrc, loading: lightboxLoading } =
     useDrivePreview(current, authReady);
 
-  const close = () => setLightboxIndex(null);
+  const closeLightbox = () => setLightboxIndex(null);
 
-  /* ------------------- UI ------------------- */
-
+  /* =========================================================
+     RENDER
+     ========================================================= */
   return (
     <>
+      {/* GRID */}
       <section className="rounded-3xl bg-white p-4 shadow-sm">
-        <div className="mb-3 flex justify-between">
-          <h2 className="text-base font-semibold">Dokumentumok</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">
+              Dokumentumok
+            </h2>
+            <p className="text-xs text-slate-500">
+              A dokumentumok Google Drive-ban tárolódnak
+            </p>
+          </div>
 
-          <label className="cursor-pointer rounded-full bg-emerald-500 px-4 py-2 text-xs text-white">
+          <label className="cursor-pointer rounded-full bg-emerald-500 px-4 py-2 text-xs text-white hover:bg-emerald-600">
             <input
               type="file"
               hidden
@@ -170,10 +192,11 @@ export default function DocumentsSection({
           </label>
         </div>
 
-        {/* AUTH NOT READY */}
         {!authReady ? (
-          <div className="text-xs text-slate-400">
-            Hitelesítés betöltése…
+          <div className="grid grid-cols-2 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
           </div>
         ) : loadingFiles ? (
           <div className="text-xs text-slate-400">Betöltés…</div>
@@ -215,19 +238,20 @@ export default function DocumentsSection({
       {/* LIGHTBOX */}
       {authReady && current && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70">
-          <button onClick={close} className="absolute inset-0" />
+          <button onClick={closeLightbox} className="absolute inset-0" />
 
-          <div className="relative z-50 max-w-3xl">
+          <div className="relative z-50 max-w-3xl px-3">
             {lightboxLoading ? (
               <div className="text-white text-xs">Betöltés…</div>
             ) : lightboxSrc ? (
               <motion.img
                 src={lightboxSrc}
-                className="max-h-[70vh] rounded-xl object-contain"
+                alt={current.name}
+                className="max-h-[70vh] rounded-xl object-contain bg-white/5"
                 animate={controls}
               />
             ) : (
-              <div className="text-white">Nincs előnézet</div>
+              <div className="text-white text-xs">Nincs előnézet</div>
             )}
           </div>
         </div>
