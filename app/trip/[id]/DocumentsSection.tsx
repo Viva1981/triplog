@@ -1,93 +1,97 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
-import { motion, PanInfo, useAnimation } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
+import { motion, PanInfo, useAnimation } from "framer-motion";
 
-/**
- * UNIVERSAL DRIVE PREVIEW LOADER (PHOTO / IMAGE DOC / PDF → PNG)
- * Same logic as FileCard → this feeds the LIGHTBOX.
- */
-function useDriveFilePreview(file: TripFile | null) {
+/* ------------------------------------------------------------------ */
+/* SESSION READY HOOK */
+/* ------------------------------------------------------------------ */
+function useAuthReady() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function check() {
+      const { data } = await supabase.auth.getSession();
+      if (active && data.session?.provider_token) {
+        setReady(true);
+      }
+    }
+
+    check();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.provider_token) {
+        setReady(true);
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  return ready;
+}
+
+/* ------------------------------------------------------------------ */
+/* DRIVE PREVIEW (IMAGE + PDF → PNG) */
+/* ------------------------------------------------------------------ */
+function useDrivePreview(file: TripFile | null, enabled: boolean) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!enabled || !file) return;
+
     let cancelled = false;
 
     async function load() {
-      if (!file) return;
-
-      // fallback if missing ID
-      if (!file.drive_file_id) {
-        setSrc(file.thumbnail_link || file.preview_link || null);
-        return;
-      }
+      if (!file.drive_file_id) return;
 
       setLoading(true);
+
       try {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.provider_token;
+        if (!token) return;
 
-        if (!token) {
-          setSrc(file.thumbnail_link || file.preview_link || null);
-          return;
-        }
+        let url: string;
 
-        // ---------------------------
-        // IMAGE / PHOTO
-        // ---------------------------
+        // IMAGE
         if (file.mime_type?.startsWith("image/")) {
           const res = await fetch(
             `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
-
-          if (!res.ok) throw new Error("Image load failed.");
-
           const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-
-          if (!cancelled) {
-            if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-            urlRef.current = url;
-            setSrc(url);
-          }
-          return;
+          url = URL.createObjectURL(blob);
         }
-
-        // ---------------------------
-        // PDF → PNG EXPORT
-        // ---------------------------
-        if (file.mime_type === "application/pdf") {
+        // PDF → PNG
+        else if (file.mime_type === "application/pdf") {
           const res = await fetch(
             `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
-
-          if (!res.ok) throw new Error("PDF export failed.");
-
           const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-
-          if (!cancelled) {
-            if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-            urlRef.current = url;
-            setSrc(url);
-          }
+          url = URL.createObjectURL(blob);
+        } else {
           return;
         }
 
-        // ---------------------------
-        // FALLBACK: other docs
-        // ---------------------------
-        setSrc(file.thumbnail_link || file.preview_link || null);
-      } catch (err) {
-        console.error("Lightbox preview error:", err);
-        setSrc(file.thumbnail_link || file.preview_link || null);
+        if (!cancelled) {
+          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+          urlRef.current = url;
+          setSrc(url);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -97,162 +101,97 @@ function useDriveFilePreview(file: TripFile | null) {
 
     return () => {
       cancelled = true;
-      if (urlRef.current) {
-        URL.revokeObjectURL(urlRef.current);
-        urlRef.current = null;
-      }
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     };
-  }, [file?.drive_file_id, file?.mime_type]);
+  }, [file?.id, enabled]);
 
   return { src, loading };
 }
 
-
-type DocumentsSectionProps = {
+/* ------------------------------------------------------------------ */
+/* COMPONENT */
+/* ------------------------------------------------------------------ */
+type Props = {
   docFiles: TripFile[];
   loadingFiles: boolean;
-  filesError: string | null;
-  submittingDoc: boolean;
-  docError: string | null;
-  docSuccess: string | null;
   uploadFileToDriveAndSave: (
     type: "photo" | "document",
     file: File
-  ) => Promise<void> | void;
-  handleRenameFile: (file: TripFile) => Promise<void> | void;
+  ) => void;
+  handleRenameFile: (file: TripFile) => void;
   handleDeleteFile: (
     fileId: string,
     type: "photo" | "document",
     driveFileId?: string
-  ) => Promise<void> | void;
+  ) => void;
   currentUserId?: string | null;
 };
-
 
 export default function DocumentsSection({
   docFiles,
   loadingFiles,
-  filesError,
-  submittingDoc,
-  docError,
-  docSuccess,
   uploadFileToDriveAndSave,
   handleRenameFile,
   handleDeleteFile,
   currentUserId,
-}: DocumentsSectionProps) {
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [lastTap, setLastTap] = useState<number | null>(null);
+}: Props) {
+  const authReady = useAuthReady();
 
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const controls = useAnimation();
 
-  const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
+  const current =
+    lightboxIndex !== null ? docFiles[lightboxIndex] : null;
 
-  // 🟢 THIS LOADS PDF → PNG OR IMAGE → BLOB FOR LIGHTBOX
   const { src: lightboxSrc, loading: lightboxLoading } =
-    useDriveFilePreview(current);
+    useDrivePreview(current, authReady);
 
-  const resetPosition = async () => {
-    await controls.start({ x: 0, y: 0, transition: { duration: 0.15 } });
-  };
+  const close = () => setLightboxIndex(null);
 
-  const openLightbox = (index: number) => {
-    setLightboxIndex(index);
-    setIsZoomed(false);
-    resetPosition();
-  };
-
-  const closeLightbox = () => {
-    setLightboxIndex(null);
-    setIsZoomed(false);
-    resetPosition();
-  };
-
-  const showPrev = () => {
-    if (lightboxIndex === null) return;
-    setLightboxIndex((prev) =>
-      prev === 0 ? docFiles.length - 1 : (prev as number) - 1
-    );
-    setIsZoomed(false);
-    resetPosition();
-  };
-
-  const showNext = () => {
-    if (lightboxIndex === null) return;
-    setLightboxIndex((prev) =>
-      prev === docFiles.length - 1 ? 0 : (prev as number) + 1
-    );
-    setIsZoomed(false);
-    resetPosition();
-  };
-
-  const handleDragEnd = (_: any, info: PanInfo) => {
-    if (isZoomed) return;
-    const threshold = 80;
-    if (info.offset.x > threshold) showPrev();
-    else if (info.offset.x < -threshold) showNext();
-  };
-
-  const handleImageTap = () => {
-    const now = Date.now();
-    if (lastTap && now - lastTap < 300) {
-      const next = !isZoomed;
-      setIsZoomed(next);
-      if (!next) resetPosition();
-    }
-    setLastTap(now);
-  };
-
-
-  // ---------------------- UI RENDER -----------------------
+  /* ------------------- UI ------------------- */
 
   return (
     <>
-      {/* GRID */}
-      <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              Dokumentumok
-            </h2>
-            <p className="text-xs text-slate-500">
-              A dokumentumok Drive-ban tárolódnak
-            </p>
-          </div>
+      <section className="rounded-3xl bg-white p-4 shadow-sm">
+        <div className="mb-3 flex justify-between">
+          <h2 className="text-base font-semibold">Dokumentumok</h2>
 
-          <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
+          <label className="cursor-pointer rounded-full bg-emerald-500 px-4 py-2 text-xs text-white">
             <input
               type="file"
-              className="hidden"
+              hidden
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) uploadFileToDriveAndSave("document", f);
                 e.target.value = "";
               }}
-              disabled={submittingDoc}
             />
-            {submittingDoc ? "Feltöltés..." : "Feltöltés"}
+            Feltöltés
           </label>
         </div>
 
-        {loadingFiles ? (
-          <div className="text-xs text-slate-500">Betöltés...</div>
+        {/* AUTH NOT READY */}
+        {!authReady ? (
+          <div className="text-xs text-slate-400">
+            Hitelesítés betöltése…
+          </div>
+        ) : loadingFiles ? (
+          <div className="text-xs text-slate-400">Betöltés…</div>
         ) : docFiles.length === 0 ? (
           <div className="text-xs text-slate-400">Nincs dokumentum.</div>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             {docFiles.map((file, index) => {
-              const canManage = !!currentUserId && file.user_id === currentUserId;
+              const canManage =
+                !!currentUserId && file.user_id === currentUserId;
 
               return (
                 <FileCard
                   key={file.id}
                   file={file}
                   canManage={canManage}
-                  onPreviewClick={() => openLightbox(index)}
+                  onPreviewClick={() => setLightboxIndex(index)}
                   onOpen={() =>
-                    file.drive_file_id &&
                     window.open(
                       `https://drive.google.com/file/d/${file.drive_file_id}/view`,
                       "_blank"
@@ -260,7 +199,11 @@ export default function DocumentsSection({
                   }
                   onRename={() => handleRenameFile(file)}
                   onDelete={() =>
-                    handleDeleteFile(file.id, "document", file.drive_file_id)
+                    handleDeleteFile(
+                      file.id,
+                      "document",
+                      file.drive_file_id
+                    )
                   }
                 />
               );
@@ -270,69 +213,21 @@ export default function DocumentsSection({
       </section>
 
       {/* LIGHTBOX */}
-      {current && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-3">
-          <button onClick={closeLightbox} className="absolute inset-0" />
+      {authReady && current && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70">
+          <button onClick={close} className="absolute inset-0" />
 
-          <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
-            <div className="relative flex items-center justify-between">
-              {/* PREV */}
-              <button
-                onClick={showPrev}
-                className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
-              >
-                ◀
-              </button>
-
-              {/* IMAGE */}
-              <motion.div
-                className="relative flex flex-1 items-center justify-center"
-                drag={isZoomed ? false : "x"}
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.2}
-                onDragEnd={handleDragEnd}
-              >
-                {lightboxLoading ? (
-                  <div className="text-white text-xs">Betöltés...</div>
-                ) : lightboxSrc ? (
-                  <motion.img
-                    key={current.id}
-                    src={lightboxSrc}
-                    alt={current.name}
-                    className="max-h-[70vh] w-auto rounded-xl object-contain bg-white/5"
-                    style={{ scale: isZoomed ? 2 : 1 }}
-                    animate={controls}
-                    drag={isZoomed}
-                    dragConstraints={
-                      isZoomed
-                        ? { left: -150, right: 150, top: -150, bottom: -150 }
-                        : undefined
-                    }
-                    dragMomentum={false}
-                    onClick={handleImageTap}
-                  />
-                ) : (
-                  <div className="text-white">Nincs előnézet</div>
-                )}
-              </motion.div>
-
-              {/* NEXT */}
-              <button
-                onClick={showNext}
-                className="hidden h-8 w-8 md:flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
-              >
-                ▶
-              </button>
-            </div>
-
-            {/* HUD */}
-            {!isZoomed && (
-              <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex justify-between px-4 text-[11px] text-slate-200">
-                <span>{current.name}</span>
-                <span>
-                  {lightboxIndex! + 1}/{docFiles.length}
-                </span>
-              </div>
+          <div className="relative z-50 max-w-3xl">
+            {lightboxLoading ? (
+              <div className="text-white text-xs">Betöltés…</div>
+            ) : lightboxSrc ? (
+              <motion.img
+                src={lightboxSrc}
+                className="max-h-[70vh] rounded-xl object-contain"
+                animate={controls}
+              />
+            ) : (
+              <div className="text-white">Nincs előnézet</div>
             )}
           </div>
         </div>
