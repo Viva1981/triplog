@@ -131,13 +131,26 @@ function SkeletonCard() {
 type Props = {
   docFiles: TripFile[];
   loadingFiles: boolean;
-  uploadFileToDriveAndSave: (type: "photo" | "document", file: File) => void;
+
+  // ⬇️ ezek hiányoztak
+  filesError: string | null;
+  submittingDoc: boolean;
+  docError: string | null;
+  docSuccess: string | null;
+
+  uploadFileToDriveAndSave: (
+    type: "photo" | "document",
+    file: File
+  ) => void;
+
   handleRenameFile: (file: TripFile) => void;
+
   handleDeleteFile: (
     fileId: string,
     type: "photo" | "document",
     driveFileId?: string
   ) => void;
+
   currentUserId?: string | null;
 };
 
