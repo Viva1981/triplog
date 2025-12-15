@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { supabase } from "@/lib/supabaseClient";
-import { motion, PanInfo, useAnimation } from "framer-motion";
+import { motion, useAnimation } from "framer-motion";
 
 /* =========================================================
    AUTH READY HOOK
@@ -55,6 +55,9 @@ function useDrivePreview(file: TripFile | null, enabled: boolean) {
     let cancelled = false;
 
     async function load() {
+      // ✅ TS guard (fix): file can be null inside async fn in TS eyes
+      if (!enabled || !file) return;
+
       if (!file.drive_file_id) return;
 
       setLoading(true);
@@ -107,7 +110,8 @@ function useDrivePreview(file: TripFile | null, enabled: boolean) {
         urlRef.current = null;
       }
     };
-  }, [file?.id, enabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, file?.id]);
 
   return { src, loading };
 }
@@ -127,10 +131,7 @@ function SkeletonCard() {
 type Props = {
   docFiles: TripFile[];
   loadingFiles: boolean;
-  uploadFileToDriveAndSave: (
-    type: "photo" | "document",
-    file: File
-  ) => void;
+  uploadFileToDriveAndSave: (type: "photo" | "document", file: File) => void;
   handleRenameFile: (file: TripFile) => void;
   handleDeleteFile: (
     fileId: string,
@@ -153,17 +154,15 @@ export default function DocumentsSection({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const controls = useAnimation();
 
-  const current =
-    lightboxIndex !== null ? docFiles[lightboxIndex] : null;
+  const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
 
-  const { src: lightboxSrc, loading: lightboxLoading } =
-    useDrivePreview(current, authReady);
+  const { src: lightboxSrc, loading: lightboxLoading } = useDrivePreview(
+    current,
+    authReady
+  );
 
   const closeLightbox = () => setLightboxIndex(null);
 
-  /* =========================================================
-     RENDER
-     ========================================================= */
   return (
     <>
       {/* GRID */}
@@ -222,11 +221,7 @@ export default function DocumentsSection({
                   }
                   onRename={() => handleRenameFile(file)}
                   onDelete={() =>
-                    handleDeleteFile(
-                      file.id,
-                      "document",
-                      file.drive_file_id
-                    )
+                    handleDeleteFile(file.id, "document", file.drive_file_id)
                   }
                 />
               );
