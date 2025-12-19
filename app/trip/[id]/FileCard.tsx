@@ -6,9 +6,9 @@ import { getFileIcon } from "@/lib/trip/fileIcons";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: Univerzális előnézet (Kép és PDF).
- * - Ha Kép: letölti az eredetit.
- * - Ha PDF: lekéri a Drive-tól a thumbnail-t, és azt tölti le.
+ * Hook: Előnézet generálása.
+ * KÉP -> Letöltés (alt=media)
+ * PDF -> Exportálás képként (export?mimeType=image/png) - A TE KÉRÉSÉDRE
  */
 function useUnifiedDrivePreview(file: TripFile) {
   const [src, setSrc] = useState<string | null>(null);
@@ -19,11 +19,11 @@ function useUnifiedDrivePreview(file: TripFile) {
     let active = true;
 
     async function load() {
-      // 1. Detektálás
+      // 1. Típus meghatározása
       const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
       const isPdf = file.mime_type === "application/pdf";
 
-      // Ha se nem kép, se nem PDF, vagy nincs ID -> kilépünk
+      // Ha nem kép és nem PDF, vagy nincs Drive ID -> kilépünk
       if ((!isImage && !isPdf) || !file.drive_file_id) {
         return;
       }
@@ -35,55 +35,41 @@ function useUnifiedDrivePreview(file: TripFile) {
         const token = data.session?.provider_token;
 
         if (!token) {
+          // Token nélkül nem megy a privát elérés
           setLoading(false);
           return;
         }
 
-        let downloadUrl = "";
-        let directDownload = false;
+        // 2. URL összeállítása az "eredeti" működés szerint
+        // PDF-nél: exportáljuk PNG képként
+        // Képnél: letöltjük a tartalmát
+        const url = isPdf
+          ? `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`
+          : `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
 
-        if (isImage) {
-          // KÉP: Eredeti tartalom
-          downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
-          directDownload = true;
-        } else {
-          // PDF: Thumbnail link lekérése
-          const metaRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
+        // 3. Fetch (Tokennel)
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-          if (!metaRes.ok) throw new Error("Meta fetch failed");
-          const metaJson = await metaRes.json();
-
-          if (metaJson.thumbnailLink) {
-            // Feljavítjuk a minőséget a Gridhez (=s500)
-            downloadUrl = metaJson.thumbnailLink.replace(/=s\d+/, "=s500");
-            directDownload = true;
-          } else {
-            // Nincs thumbnail -> marad az ikon
-            directDownload = false;
-          }
+        if (!res.ok) {
+           // Ha a PDF export nem sikerül (pl. 400 Bad Request),
+           // itt elkapjuk a hibát, és null-t adunk vissza (ikon lesz).
+           throw new Error(`Preview fetch error: ${res.status}`);
         }
 
-        if (directDownload) {
-          // A tartalom (kép vagy thumbnail) letöltése Blob-ként
-          const res = await fetch(downloadUrl, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+        const blob = await res.blob();
+        if (!active) return;
 
-          if (!res.ok) throw new Error("Content fetch failed");
+        const objUrl = URL.createObjectURL(blob);
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = objUrl;
+        
+        setSrc(objUrl);
 
-          const blob = await res.blob();
-          if (!active) return;
-
-          const objUrl = URL.createObjectURL(blob);
-          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-          urlRef.current = objUrl;
-          setSrc(objUrl);
-        }
       } catch (err) {
-        console.error("Preview error:", file.name, err);
+        // Csendes hiba - ha nem sikerül a kép, marad az ikon
+        // console.error("Preview load error:", file.name, err);
         setSrc(null);
       } finally {
         if (active) setLoading(false);
@@ -121,7 +107,6 @@ export default function FileCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // Az "okos" hook használata
   const { src: previewSrc, loading } = useUnifiedDrivePreview(file);
 
   useEffect(() => {
@@ -147,6 +132,7 @@ export default function FileCard({
     };
   }, [menuOpen]);
 
+  // Van-e megjeleníthető képünk?
   const hasPreview = !!previewSrc;
 
   return (
@@ -157,8 +143,12 @@ export default function FileCard({
         className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px] text-left"
       >
         {loading ? (
-          <div className="flex h-full w-full items-center justify-center bg-slate-50">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-500"></div>
+          <div className="flex h-full w-full items-center justify-center bg-slate-50 text-xs text-slate-400">
+             <div className="flex flex-col items-center gap-2">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-500"></div>
+                {/* PDF esetén ez tovább tarthat a konverzió miatt */}
+                <span>Előnézet...</span>
+             </div>
           </div>
         ) : hasPreview ? (
           <img
@@ -167,14 +157,14 @@ export default function FileCard({
             className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
           />
         ) : (
-          /* Fallback: Ikon + Név (ha pl. Word doksi, vagy nincs thumbnail) */
+          /* Ha minden kötél szakad (vagy nem PDF/Kép), marad az ikon */
           <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
-            <div className="mb-3 scale-125 transform transition-transform group-hover:scale-110">
-              {getFileIcon(file)}
-            </div>
-            <div className="w-full truncate text-xs font-medium text-slate-700 px-2">
-              {file.name}
-            </div>
+             <div className="mb-3 scale-125 transform transition-transform group-hover:scale-110">
+                {getFileIcon(file)}
+             </div>
+             <div className="w-full truncate text-xs font-medium text-slate-700 px-2">
+                {file.name}
+             </div>
           </div>
         )}
       </button>

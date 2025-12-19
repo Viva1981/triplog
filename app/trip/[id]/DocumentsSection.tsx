@@ -7,7 +7,9 @@ import { motion, PanInfo, useAnimation } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: Dokumentum Lightbox (Nagy felbontású kép/PDF thumbnail).
+ * Hook: Lightbox betöltő.
+ * PDF -> export?mimeType=image/png
+ * Kép -> alt=media
  */
 function useDocumentLightbox(file: TripFile | null) {
   const [src, setSrc] = useState<string | null>(null);
@@ -17,13 +19,11 @@ function useDocumentLightbox(file: TripFile | null) {
     let active = true;
 
     async function load() {
-      // 1. Validálás
       if (!file?.drive_file_id) {
         setSrc(null);
         return;
       }
-
-      // Detektálás
+      
       const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
       const isPdf = file.mime_type === "application/pdf";
 
@@ -40,35 +40,16 @@ function useDocumentLightbox(file: TripFile | null) {
 
         if (!token) return;
 
-        let downloadUrl = "";
+        // UGYANAZ AZ EXPORT LOGIKA, amit kértél
+        const url = isPdf
+          ? `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`
+          : `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
 
-        if (isImage) {
-          // KÉP: Eredeti letöltés
-          downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
-        } else {
-          // PDF: Thumbnail lekérés
-          const metaRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-
-          if (!metaRes.ok) throw new Error("Meta fetch fail");
-          const metaJson = await metaRes.json();
-
-          if (metaJson.thumbnailLink) {
-            // Nagy felbontás (=s1600)
-            downloadUrl = metaJson.thumbnailLink.replace(/=s\d+/, "=s1600");
-          } else {
-            throw new Error("No thumbnail");
-          }
-        }
-
-        // Tényleges letöltés Blob-ként
-        const res = await fetch(downloadUrl, {
+        const res = await fetch(url, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) throw new Error("Blob fetch error");
+        if (!res.ok) throw new Error("Lightbox fetch failed");
 
         const blob = await res.blob();
         if (!active) return;
@@ -76,8 +57,9 @@ function useDocumentLightbox(file: TripFile | null) {
         const objUrl = URL.createObjectURL(blob);
         if (urlRef.current) URL.revokeObjectURL(urlRef.current);
         urlRef.current = objUrl;
-
+        
         setSrc(objUrl);
+
       } catch (err) {
         console.error("Lightbox load error:", err);
       }
@@ -328,7 +310,6 @@ export default function DocumentsSection({
 
             {!isZoomed && (
               <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 pointer-events-auto">
-                 {/* PDF esetén link az eredetihez, ha a kép nem lenne elég */}
                  {current.mime_type === "application/pdf" && (
                     <a
                       href={`https://drive.google.com/file/d/${current.drive_file_id}/view`}
