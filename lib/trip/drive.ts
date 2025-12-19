@@ -35,6 +35,7 @@ export async function getOrCreateTripLogRootFolder(
     return searchData.files[0].id as string;
   }
 
+  // Ha nincs meg, létrehozzuk. (Alapból privát lesz, és ez a cél!)
   const createRes = await fetch(baseUrl, {
     method: "POST",
     headers: {
