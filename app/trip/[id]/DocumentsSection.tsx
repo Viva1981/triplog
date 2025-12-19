@@ -7,9 +7,9 @@ import { motion, PanInfo, useAnimation } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: Dokumentum nagy felbontású előnézete (Privát fájlokhoz).
- * - Képek esetén: letölti a fájlt (alt=media).
- * - PDF esetén: a Drive-al generáltat egy PNG képet az első oldalról (/export).
+ * Hook: Dokumentum Lightbox előnézet (Privát fájlokhoz).
+ * - Képek: alt=media
+ * - PDF: thumbnailLink (=s1600 méretben) letöltése
  */
 function useDocumentLightboxPreview(file: TripFile | null) {
   const [src, setSrc] = useState<string | null>(null);
@@ -27,7 +27,6 @@ function useDocumentLightboxPreview(file: TripFile | null) {
       const isImage = file.mime_type?.startsWith("image/");
       const isPdf = file.mime_type === "application/pdf";
 
-      // Csak kép vagy PDF esetén tudunk "képes" előnézetet adni
       if (!isImage && !isPdf) {
         setSrc(null);
         return;
@@ -41,18 +40,32 @@ function useDocumentLightboxPreview(file: TripFile | null) {
 
         if (!token) return;
 
-        // Ugyanaz a logika, mint a FileCard-ban:
-        // PDF -> export képként
-        // Kép -> letöltés
-        const url = isPdf
-          ? `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`
-          : `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
+        let downloadUrl = "";
 
-        const res = await fetch(url, {
+        if (isImage) {
+          // Kép esetén az eredeti tartalom
+          downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
+        } else {
+          // PDF esetén lekérjük a thumbnail linket
+          const metaRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          if (!metaRes.ok) throw new Error("Metadata fetch fail");
+          const metaData = await metaRes.json();
+          
+          if (!metaData.thumbnailLink) throw new Error("No thumbnail");
+
+          // Nagy felbontás kérése (pl. s1600 = 1600px széles)
+          downloadUrl = metaData.thumbnailLink.replace(/=s\d+/, "=s1600");
+        }
+
+        const res = await fetch(downloadUrl, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) throw new Error("Lightbox preview error");
+        if (!res.ok) throw new Error("Lightbox content fetch error");
 
         const blob = await res.blob();
         if (!active) return;
@@ -178,12 +191,11 @@ export default function DocumentsSection({
 
   const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
   
-  // Itt töltjük be a "képes" verziót (akár PDF, akár JPG)
+  // PDF vagy Kép betöltése
   const lightboxSrc = useDocumentLightboxPreview(current);
 
   return (
     <>
-      {/* GRID SECTION */}
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -206,7 +218,6 @@ export default function DocumentsSection({
           </label>
         </div>
 
-        {/* Hibaüzenetek */}
         {(docError || filesError) && (
           <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
             {docError || filesError}
@@ -219,7 +230,6 @@ export default function DocumentsSection({
           </div>
         )}
 
-        {/* Lista */}
         {loadingFiles ? (
           <div className="text-xs text-slate-400">Betöltés…</div>
         ) : docFiles.length === 0 ? (
@@ -255,7 +265,7 @@ export default function DocumentsSection({
         )}
       </section>
 
-      {/* LIGHTBOX OVERLAY */}
+      {/* LIGHTBOX */}
       {current && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 backdrop-blur-sm px-3">
           <button
@@ -283,7 +293,6 @@ export default function DocumentsSection({
                 dragElastic={0.2}
                 onDragEnd={handleDragEnd}
               >
-                {/* Ha sikerült képet csinálni belőle (PDF vagy JPG), akkor azt mutatjuk */}
                 {lightboxSrc ? (
                   <motion.img
                     key={current.id}
@@ -302,11 +311,11 @@ export default function DocumentsSection({
                     onClick={handleImageTap}
                   />
                 ) : (
-                  // Ha még töltődik, vagy nem támogatott formátum
                   <div className="flex flex-col items-center justify-center gap-4 text-white animate-pulse">
+                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
                      <div className="text-sm">Előnézet betöltése...</div>
                      {current.mime_type === "application/pdf" && (
-                         <div className="text-xs text-white/60">(PDF konvertálása)</div>
+                         <div className="text-xs text-white/60">(Privát PDF feldolgozása)</div>
                      )}
                   </div>
                 )}
@@ -321,10 +330,8 @@ export default function DocumentsSection({
               </button>
             </div>
 
-            {/* Infó sáv */}
             {!isZoomed && (
               <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 pointer-events-auto">
-                 {/* PDF-nél egy extra gomb, ha a konverzió nem lenne elég jó */}
                  {current.mime_type === "application/pdf" && (
                     <a
                       href={`https://drive.google.com/file/d/${current.drive_file_id}/view`}

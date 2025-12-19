@@ -6,8 +6,8 @@ import { getFileIcon } from "@/lib/trip/fileIcons";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: Kép letöltése VAGY PDF első oldalának exportálása képként.
- * Ez teszi lehetővé, hogy a PDF-ek is "galéria-szerűen" jelenjenek meg.
+ * Hook: Kép letöltése VAGY PDF miniatűr (thumbnail) letöltése Blob-ként.
+ * Ez a "mindent vivő" megoldás privát fájlokhoz.
  */
 function usePrivateDrivePreview(file: TripFile) {
   const [src, setSrc] = useState<string | null>(null);
@@ -37,16 +37,39 @@ function usePrivateDrivePreview(file: TripFile) {
           return;
         }
 
-        // TRÜKK: Ha PDF, akkor exportáljuk PNG-be. Ha kép, akkor letöltjük.
-        const url = isPdf
-          ? `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`
-          : `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
+        let downloadUrl = "";
 
-        const res = await fetch(url, {
+        if (isImage) {
+          // 1. ESET: Kép -> Eredeti letöltése (jobb minőség)
+          downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
+        } else {
+          // 2. ESET: PDF -> Thumbnail link lekérése és letöltése
+          // Először lekérjük a fájl metaadatait, hogy megkapjuk a friss thumbnailLink-et
+          const metaRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          if (!metaRes.ok) throw new Error("Metadata fetch fail");
+          const metaData = await metaRes.json();
+          
+          if (!metaData.thumbnailLink) {
+            // Ha nincs thumbnail (pl. feldolgozás alatt), akkor nincs mit tenni
+            throw new Error("No thumbnail available");
+          }
+
+          // A thumbnail link gyakran tartalmaz méretparamétert (=s220), ezt növeljük meg a jobb minőségért
+          // Pl: ...=s220 -> ...=s1000 (1000px széles)
+          downloadUrl = metaData.thumbnailLink.replace(/=s\d+/, "=s800"); 
+        }
+
+        // 3. A tartalom (kép vagy thumbnail) letöltése Blob-ként
+        // Fontos: A thumbnailLink-hez is kellhet a token privát fájlnál!
+        const res = await fetch(downloadUrl, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) throw new Error("Preview fetch error");
+        if (!res.ok) throw new Error("Content fetch error");
 
         const blob = await res.blob();
         if (!active) return;
@@ -58,7 +81,8 @@ function usePrivateDrivePreview(file: TripFile) {
         setSrc(objUrl);
 
       } catch (err) {
-        console.error("Előnézet hiba:", err);
+        // Csendben elnyeljük a hibát, így marad az ikon
+        // console.error("Preview hiba:", err); 
         setSrc(null);
       } finally {
         if (active) setLoading(false);
@@ -96,7 +120,6 @@ export default function FileCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // Az új okos hookot használjuk
   const { src: previewSrc, loading } = usePrivateDrivePreview(file);
 
   useEffect(() => {
@@ -122,7 +145,6 @@ export default function FileCard({
     };
   }, [menuOpen]);
 
-  // Van-e előnézetünk? (Ez most már PDF-re is igaz lehet!)
   const hasPreview = !!previewSrc;
 
   return (
@@ -133,8 +155,11 @@ export default function FileCard({
         className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
       >
         {loading ? (
-          <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-            Előnézet betöltése...
+          <div className="flex h-full w-full items-center justify-center bg-slate-50 text-xs text-slate-400">
+            <div className="flex flex-col items-center gap-2">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-500"></div>
+              <span>Betöltés...</span>
+            </div>
           </div>
         ) : hasPreview ? (
           <img
