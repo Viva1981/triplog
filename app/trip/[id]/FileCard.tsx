@@ -6,10 +6,10 @@ import { getFileIcon } from "@/lib/trip/fileIcons";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: Kép vagy PDF miniatűr letöltése Blob-ként.
- * Ez felelős a Grid-ben lévő képek megjelenítéséért.
+ * Hook: KIZÁRÓLAG képek letöltése.
+ * PDF-ekkel nem kísérletezünk, azok maradnak ikonok.
  */
-function useDriveCardPreview(file: TripFile) {
+function useDriveImagePreview(file: TripFile) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const urlRef = useRef<string | null>(null);
@@ -18,12 +18,13 @@ function useDriveCardPreview(file: TripFile) {
     let active = true;
 
     async function load() {
-      // 1. Detektálás: Fotó vagy PDF?
-      // Kibővítettem: Ha a típusa 'photo', VAGY a mime kezdődik image/-el -> KÉP
-      const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
-      const isPdf = file.mime_type === "application/pdf";
+      // Szigorú szűrés: Csak akkor töltünk, ha biztosan kép
+      // (A type='photo' vagy a mime image/*)
+      const isImage =
+        file.type === "photo" || file.mime_type?.startsWith("image/");
 
-      if ((!isImage && !isPdf) || !file.drive_file_id) {
+      // PDF-et itt már NEM engedünk át!
+      if (!isImage || !file.drive_file_id) {
         return;
       }
 
@@ -34,58 +35,29 @@ function useDriveCardPreview(file: TripFile) {
         const token = data.session?.provider_token;
 
         if (!token) {
-          // Token nélkül nincs privát kép
           setLoading(false);
           return;
         }
 
-        let downloadUrl = "";
-        let useDirectDownload = false;
-
-        if (isImage) {
-          // KÉP: Eredeti tartalom letöltése (alt=media)
-          downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
-          useDirectDownload = true;
-        } else {
-          // PDF: Thumbnail link lekérése az API-tól
-          const metaUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`;
-          const metaRes = await fetch(metaUrl, {
+        // Kép letöltése (alt=media)
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
+          {
             headers: { Authorization: `Bearer ${token}` },
-          });
-
-          if (!metaRes.ok) throw new Error("Meta fetch failed");
-          const metaJson = await metaRes.json();
-          
-          if (metaJson.thumbnailLink) {
-             // Thumbnail link feljavítása (=s500)
-             downloadUrl = metaJson.thumbnailLink.replace(/=s\d+/, "=s500");
-             useDirectDownload = true;
-          } else {
-             // Ha nincs thumbnail, marad az ikon
-             setLoading(false);
-             return;
           }
-        }
+        );
 
-        if (useDirectDownload) {
-          // A tartalom (kép vagy thumbnail) letöltése Blob-ként
-          const res = await fetch(downloadUrl, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+        if (!res.ok) throw new Error("Image fetch failed");
 
-          if (!res.ok) throw new Error("Blob fetch failed");
+        const blob = await res.blob();
+        if (!active) return;
 
-          const blob = await res.blob();
-          if (!active) return;
-
-          const objUrl = URL.createObjectURL(blob);
-          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-          urlRef.current = objUrl;
-          setSrc(objUrl);
-        }
-
+        const objUrl = URL.createObjectURL(blob);
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = objUrl;
+        setSrc(objUrl);
       } catch (err) {
-        console.error("Card preview error:", file.name, err);
+        console.error("Image load error:", file.name, err);
         setSrc(null);
       } finally {
         if (active) setLoading(false);
@@ -109,7 +81,7 @@ interface FileCardProps {
   onRename: () => void;
   onDelete: () => void;
   onOpen?: () => void;
-  onPreviewClick?: () => void;
+  onPreviewClick?: () => void; // Ez nyitja meg a Lightboxot VAGY a Drive-ot
 }
 
 export default function FileCard({
@@ -123,7 +95,7 @@ export default function FileCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const { src: previewSrc, loading } = useDriveCardPreview(file);
+  const { src: previewSrc, loading } = useDriveImagePreview(file);
 
   useEffect(() => {
     function handleClickOutside(e: Event) {
@@ -148,31 +120,34 @@ export default function FileCard({
     };
   }, [menuOpen]);
 
-  // Akkor mutatjuk a képet, ha van forrás, ÉS (kép vagy pdf)
-  const isVisual = file.type === "photo" || file.mime_type?.startsWith("image/") || file.mime_type === "application/pdf";
-  const showImage = !!previewSrc;
+  const hasPreview = !!previewSrc;
 
   return (
     <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
       <button
         type="button"
         onClick={onPreviewClick}
-        className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
+        className="block w-full overflow-hidden rounded-2xl h-40 sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px] text-left"
       >
         {loading ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-50">
-             {/* Spinner */}
-             <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-500"></div>
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-500"></div>
           </div>
-        ) : showImage ? (
+        ) : hasPreview ? (
           <img
             src={previewSrc!}
             alt={file.name}
             className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-slate-500">
-            {getFileIcon(file)}
+          /* Ha nincs kép (pl. PDF), akkor Ikon + Név */
+          <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
+            <div className="mb-3 scale-125 transform transition-transform group-hover:scale-110">
+              {getFileIcon(file)}
+            </div>
+            <div className="w-full truncate text-xs font-medium text-slate-700 px-2">
+              {file.name}
+            </div>
           </div>
         )}
       </button>

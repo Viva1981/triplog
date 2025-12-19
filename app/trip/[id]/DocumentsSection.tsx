@@ -1,100 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
-import { motion, PanInfo, useAnimation } from "framer-motion";
-import { supabase } from "@/lib/supabaseClient";
-
-/**
- * Hook: Dokumentum Lightbox (Képek és PDF thumbnail).
- * Ugyanaz a logika, mint a FileCard-ban, csak nagy felbontással.
- */
-function useDocumentLightbox(file: TripFile | null) {
-  const [src, setSrc] = useState<string | null>(null);
-  const urlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    async function load() {
-      // 1. Validálás
-      if (!file?.drive_file_id) {
-        setSrc(null);
-        return;
-      }
-      
-      // Detektálás: Kép vagy PDF?
-      const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
-      const isPdf = file.mime_type === "application/pdf";
-
-      if (!isImage && !isPdf) {
-        setSrc(null);
-        return;
-      }
-
-      setSrc(null);
-
-      try {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.provider_token;
-
-        if (!token) return;
-
-        let downloadUrl = "";
-
-        if (isImage) {
-          // KÉP: Eredeti letöltés
-          downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
-        } else {
-          // PDF: Thumbnail lekérés
-          const metaUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`;
-          const metaRes = await fetch(metaUrl, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          
-          if (!metaRes.ok) throw new Error("Meta fail");
-          const metaJson = await metaRes.json();
-
-          if (metaJson.thumbnailLink) {
-             // Nagy felbontás (=s1600)
-             downloadUrl = metaJson.thumbnailLink.replace(/=s\d+/, "=s1600");
-          } else {
-             throw new Error("No thumb");
-          }
-        }
-
-        // Tényleges letöltés (tokennel!)
-        const res = await fetch(downloadUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!res.ok) throw new Error("Blob fetch error");
-
-        const blob = await res.blob();
-        if (!active) return;
-
-        const objUrl = URL.createObjectURL(blob);
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        urlRef.current = objUrl;
-        
-        setSrc(objUrl);
-
-      } catch (err) {
-        console.error("Lightbox load error:", err);
-      }
-    }
-
-    load();
-
-    return () => {
-      active = false;
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    };
-  }, [file?.drive_file_id, file?.mime_type, file?.type]);
-
-  return src;
-}
 
 type DocumentsSectionProps = {
   docFiles: TripFile[];
@@ -128,12 +36,6 @@ export default function DocumentsSection({
   handleDeleteFile,
   currentUserId,
 }: DocumentsSectionProps) {
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [lastTap, setLastTap] = useState<number | null>(null);
-
-  const controls = useAnimation();
-
   const handleDocChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -141,224 +43,83 @@ export default function DocumentsSection({
     e.target.value = "";
   };
 
-  const resetPosition = async () => {
-    await controls.start({ x: 0, y: 0, transition: { duration: 0.15 } });
-  };
-
-  const openLightbox = (index: number) => {
-    setLightboxIndex(index);
-    setIsZoomed(false);
-    resetPosition();
-  };
-
-  const closeLightbox = () => {
-    setLightboxIndex(null);
-    setIsZoomed(false);
-    resetPosition();
-  };
-
-  const showPrev = () => {
-    if (lightboxIndex === null) return;
-    setLightboxIndex((prev) =>
-      prev === 0 ? docFiles.length - 1 : (prev as number) - 1
-    );
-    setIsZoomed(false);
-    resetPosition();
-  };
-
-  const showNext = () => {
-    if (lightboxIndex === null) return;
-    setLightboxIndex((prev) =>
-      prev === docFiles.length - 1 ? 0 : (prev as number) + 1
-    );
-    setIsZoomed(false);
-    resetPosition();
-  };
-
-  const handleDragEnd = (_: any, info: PanInfo) => {
-    if (isZoomed) return;
-    const threshold = 80;
-    if (info.offset.x > threshold) showPrev();
-    else if (info.offset.x < -threshold) showNext();
-  };
-
-  const handleImageTap = () => {
-    const now = Date.now();
-    if (lastTap && now - lastTap < 300) {
-      const next = !isZoomed;
-      setIsZoomed(next);
-      if (!next) resetPosition();
+  // Segédfüggvény a megnyitáshoz
+  const openInDrive = (file: TripFile) => {
+    if (file.drive_file_id) {
+      // Ez a standard Google Drive nézegető linkje
+      window.open(
+        `https://drive.google.com/file/d/${file.drive_file_id}/view`,
+        "_blank"
+      );
     }
-    setLastTap(now);
   };
-
-  const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
-  const lightboxSrc = useDocumentLightbox(current);
 
   return (
-    <>
-      <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              Dokumentumok
-            </h2>
-            <p className="text-xs text-slate-500">
-              PDF-ek és képek.
+    <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">
+            Dokumentumok
+          </h2>
+          <p className="text-xs text-slate-500">
+            PDF-ek, jegyek, igazolások.
+          </p>
+          {docFiles.length > 0 && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              {docFiles.length} fájl
             </p>
-          </div>
-
-          <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
-            <input
-              type="file"
-              className="hidden"
-              onChange={handleDocChange}
-              disabled={submittingDoc}
-            />
-            {submittingDoc ? "Feltöltés..." : "Feltöltés"}
-          </label>
+          )}
         </div>
 
-        {(docError || filesError) && (
-          <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-            {docError || filesError}
-          </div>
-        )}
-
-        {docSuccess && (
-          <div className="mb-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-            {docSuccess}
-          </div>
-        )}
-
-        {loadingFiles ? (
-          <div className="text-xs text-slate-400">Betöltés…</div>
-        ) : docFiles.length === 0 ? (
-          <div className="text-xs text-slate-400">Még nincs dokumentum.</div>
-        ) : (
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            {docFiles.map((file, index) => {
-              const canManage =
-                !!currentUserId && file.user_id === currentUserId;
-
-              return (
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  canManage={canManage}
-                  onPreviewClick={() => openLightbox(index)}
-                  onOpen={() => {
-                    if (file.drive_file_id) {
-                      window.open(
-                        `https://drive.google.com/file/d/${file.drive_file_id}/view`,
-                        "_blank"
-                      );
-                    }
-                  }}
-                  onRename={() => handleRenameFile(file)}
-                  onDelete={() =>
-                    handleDeleteFile(file.id, "document", file.drive_file_id)
-                  }
-                />
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* LIGHTBOX */}
-      {current && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 backdrop-blur-sm px-3">
-          <button
-            type="button"
-            onClick={closeLightbox}
-            className="absolute inset-0 cursor-default"
-            aria-label="Bezárás"
+        <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
+          <input
+            type="file"
+            className="hidden"
+            onChange={handleDocChange}
+            disabled={submittingDoc}
           />
+          {submittingDoc ? "Feltöltés..." : "Feltöltés"}
+        </label>
+      </div>
 
-          <div className="relative z-50 w-full max-w-5xl h-full flex flex-col justify-center pointer-events-none">
-            <div className="relative flex items-center justify-between w-full h-full pointer-events-auto">
-              
-              <button
-                type="button"
-                onClick={showPrev}
-                className="hidden h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 backdrop-blur-md transition mx-4 md:flex"
-              >
-                ◀
-              </button>
-
-              <motion.div
-                className="relative flex flex-1 items-center justify-center h-full overflow-hidden"
-                drag={isZoomed ? false : "x"}
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.2}
-                onDragEnd={handleDragEnd}
-              >
-                {lightboxSrc ? (
-                  <motion.img
-                    key={current.id}
-                    src={lightboxSrc}
-                    alt={current.name}
-                    className="max-h-[85vh] max-w-full object-contain rounded-sm shadow-2xl"
-                    style={{ scale: isZoomed ? 2 : 1, cursor: isZoomed ? "zoom-out" : "zoom-in" }}
-                    animate={controls}
-                    drag={isZoomed}
-                    dragConstraints={
-                      isZoomed
-                        ? { left: -300, right: 300, top: -300, bottom: 300 }
-                        : undefined
-                    }
-                    dragMomentum={false}
-                    onClick={handleImageTap}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center gap-4 text-white animate-pulse">
-                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
-                     <div className="text-sm">Előnézet betöltése...</div>
-                  </div>
-                )}
-              </motion.div>
-
-              <button
-                type="button"
-                onClick={showNext}
-                className="hidden h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 backdrop-blur-md transition mx-4 md:flex"
-              >
-                ▶
-              </button>
-            </div>
-
-            {!isZoomed && (
-              <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 pointer-events-auto">
-                 {current.mime_type === "application/pdf" && (
-                    <a
-                      href={`https://drive.google.com/file/d/${current.drive_file_id}/view`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-full bg-white/20 px-4 py-1 text-[10px] text-white hover:bg-white/30 backdrop-blur-md mb-2"
-                    >
-                      Eredeti PDF megnyitása ↗
-                    </a>
-                 )}
-
-                <div className="flex justify-between w-full px-6 text-xs text-white/80 pointer-events-none">
-                    <span className="truncate pr-4">{current.name}</span>
-                    <span>
-                    {lightboxIndex! + 1} / {docFiles.length}
-                    </span>
-                </div>
-              </div>
-            )}
-
-            <button 
-                onClick={closeLightbox}
-                className="absolute top-4 right-4 z-50 p-2 text-white/70 hover:text-white pointer-events-auto bg-black/20 rounded-full md:bg-transparent"
-            >
-                ✕
-            </button>
-          </div>
+      {(docError || filesError) && (
+        <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+          {docError || filesError}
         </div>
       )}
-    </>
+
+      {docSuccess && (
+        <div className="mb-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          {docSuccess}
+        </div>
+      )}
+
+      {loadingFiles ? (
+        <div className="text-xs text-slate-400">Betöltés…</div>
+      ) : docFiles.length === 0 ? (
+        <div className="text-xs text-slate-400">Még nincs dokumentum.</div>
+      ) : (
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          {docFiles.map((file) => {
+            const canManage = !!currentUserId && file.user_id === currentUserId;
+
+            return (
+              <FileCard
+                key={file.id}
+                file={file}
+                canManage={canManage}
+                // Itt a lényeg: Lightbox helyett sima Drive megnyitás
+                onPreviewClick={() => openInDrive(file)}
+                onOpen={() => openInDrive(file)}
+                onRename={() => handleRenameFile(file)}
+                onDelete={() =>
+                  handleDeleteFile(file.id, "document", file.drive_file_id)
+                }
+              />
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
