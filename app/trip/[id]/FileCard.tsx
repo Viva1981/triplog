@@ -6,10 +6,11 @@ import { getFileIcon } from "@/lib/trip/fileIcons";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: Kép letöltése VAGY PDF miniatűr (thumbnail) letöltése Blob-ként.
- * Ez a "mindent vivő" megoldás privát fájlokhoz.
+ * Hook: Univerzális privát előnézet betöltő.
+ * - Ha KÉP (bárhol): Letölti a tartalmát (alt=media).
+ * - Ha PDF: Lekéri a thumbnailLink-et a Drive API-tól, és azt tölti le.
  */
-function usePrivateDrivePreview(file: TripFile) {
+function useUnifiedDrivePreview(file: TripFile) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const urlRef = useRef<string | null>(null);
@@ -18,10 +19,12 @@ function usePrivateDrivePreview(file: TripFile) {
     let active = true;
 
     async function load() {
-      // Csak Képek és PDF-ek esetén próbálkozunk előnézettel
-      const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
-      const isPdf = file.mime_type === "application/pdf";
+      // 1. Típus detektálása a mime_type alapján (nem a trip_file_type alapján!)
+      const mime = file.mime_type || "";
+      const isImage = mime.startsWith("image/");
+      const isPdf = mime === "application/pdf";
 
+      // Ha se nem kép, se nem PDF, vagy nincs Drive ID, nem csinálunk semmit
       if ((!isImage && !isPdf) || !file.drive_file_id) {
         return;
       }
@@ -33,56 +36,70 @@ function usePrivateDrivePreview(file: TripFile) {
         const token = data.session?.provider_token;
 
         if (!token) {
-          setLoading(false);
+          // Token nélkül privát fájlt nem tudunk megjeleníteni
           return;
         }
 
         let downloadUrl = "";
 
         if (isImage) {
-          // 1. ESET: Kép -> Eredeti letöltése (jobb minőség)
+          // --- A) KÉP ESETÉN ---
+          // Közvetlenül letöltjük a bináris adatot
           downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
-        } else {
-          // 2. ESET: PDF -> Thumbnail link lekérése és letöltése
-          // Először lekérjük a fájl metaadatait, hogy megkapjuk a friss thumbnailLink-et
-          const metaRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
           
-          if (!metaRes.ok) throw new Error("Metadata fetch fail");
-          const metaData = await metaRes.json();
+          // A letöltéshez sima fetch kell a tokennel
+          const res = await fetch(downloadUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
           
-          if (!metaData.thumbnailLink) {
-            // Ha nincs thumbnail (pl. feldolgozás alatt), akkor nincs mit tenni
-            throw new Error("No thumbnail available");
+          if (!res.ok) throw new Error("Image fetch failed");
+          const blob = await res.blob();
+          
+          if (!active) return;
+          const objUrl = URL.createObjectURL(blob);
+          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+          urlRef.current = objUrl;
+          setSrc(objUrl);
+
+        } else if (isPdf) {
+          // --- B) PDF ESETÉN ---
+          // 1. lépés: Lekérjük a metaadatokat, hogy megkapjuk a thumbnailLink-et
+          // Fontos: A DB-ben lehet, hogy nincs, de az API tudja!
+          const metaUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`;
+          const metaRes = await fetch(metaUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (!metaRes.ok) throw new Error("Meta fetch failed");
+          const metaJson = await metaRes.json();
+          
+          if (!metaJson.thumbnailLink) {
+            // Ha a Drive még nem generálta le (ritka), akkor marad az ikon
+            throw new Error("No thumbnailLink from API");
           }
 
-          // A thumbnail link gyakran tartalmaz méretparamétert (=s220), ezt növeljük meg a jobb minőségért
-          // Pl: ...=s220 -> ...=s1000 (1000px széles)
-          downloadUrl = metaData.thumbnailLink.replace(/=s\d+/, "=s800"); 
+          // 2. lépés: A kapott link (pl. ...=s220) feljavítása nagyobb méretre
+          // Gridhez az s500 bőven elég
+          const thumbUrl = metaJson.thumbnailLink.replace(/=s\d+/, "=s500");
+
+          // 3. lépés: Letöltjük a thumbnail képet (Ehhez is kellhet a token!)
+          const thumbRes = await fetch(thumbUrl, {
+             headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (!thumbRes.ok) throw new Error("Thumbnail download failed");
+          const blob = await thumbRes.blob();
+
+          if (!active) return;
+          const objUrl = URL.createObjectURL(blob);
+          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+          urlRef.current = objUrl;
+          setSrc(objUrl);
         }
 
-        // 3. A tartalom (kép vagy thumbnail) letöltése Blob-ként
-        // Fontos: A thumbnailLink-hez is kellhet a token privát fájlnál!
-        const res = await fetch(downloadUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!res.ok) throw new Error("Content fetch error");
-
-        const blob = await res.blob();
-        if (!active) return;
-
-        const objUrl = URL.createObjectURL(blob);
-        
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        urlRef.current = objUrl;
-        setSrc(objUrl);
-
       } catch (err) {
-        // Csendben elnyeljük a hibát, így marad az ikon
-        // console.error("Preview hiba:", err); 
+        // Hiba esetén (pl. 403, 404) nullázzuk, így marad az ikon
+        console.error("Preview load error:", file.name, err);
         setSrc(null);
       } finally {
         if (active) setLoading(false);
@@ -95,7 +112,7 @@ function usePrivateDrivePreview(file: TripFile) {
       active = false;
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     };
-  }, [file.drive_file_id, file.type, file.mime_type]);
+  }, [file.drive_file_id, file.mime_type]);
 
   return { src, loading };
 }
@@ -120,7 +137,8 @@ export default function FileCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const { src: previewSrc, loading } = usePrivateDrivePreview(file);
+  // Az új, egyesített hook használata
+  const { src: previewSrc, loading } = useUnifiedDrivePreview(file);
 
   useEffect(() => {
     function handleClickOutside(e: Event) {
@@ -145,6 +163,7 @@ export default function FileCard({
     };
   }, [menuOpen]);
 
+  // Van-e megjeleníthető képünk?
   const hasPreview = !!previewSrc;
 
   return (
@@ -157,6 +176,7 @@ export default function FileCard({
         {loading ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-50 text-xs text-slate-400">
             <div className="flex flex-col items-center gap-2">
+               {/* Kis spinner */}
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-500"></div>
               <span>Betöltés...</span>
             </div>
