@@ -6,10 +6,11 @@ import { getFileIcon } from "@/lib/trip/fileIcons";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: KIZÁRÓLAG képek letöltése.
- * PDF-ekkel nem kísérletezünk, azok maradnak ikonok.
+ * Hook: Univerzális előnézet (Kép és PDF).
+ * - Ha Kép: letölti az eredetit.
+ * - Ha PDF: lekéri a Drive-tól a thumbnail-t, és azt tölti le.
  */
-function useDriveImagePreview(file: TripFile) {
+function useUnifiedDrivePreview(file: TripFile) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const urlRef = useRef<string | null>(null);
@@ -18,13 +19,12 @@ function useDriveImagePreview(file: TripFile) {
     let active = true;
 
     async function load() {
-      // Szigorú szűrés: Csak akkor töltünk, ha biztosan kép
-      // (A type='photo' vagy a mime image/*)
-      const isImage =
-        file.type === "photo" || file.mime_type?.startsWith("image/");
+      // 1. Detektálás
+      const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
+      const isPdf = file.mime_type === "application/pdf";
 
-      // PDF-et itt már NEM engedünk át!
-      if (!isImage || !file.drive_file_id) {
+      // Ha se nem kép, se nem PDF, vagy nincs ID -> kilépünk
+      if ((!isImage && !isPdf) || !file.drive_file_id) {
         return;
       }
 
@@ -39,25 +39,51 @@ function useDriveImagePreview(file: TripFile) {
           return;
         }
 
-        // Kép letöltése (alt=media)
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
+        let downloadUrl = "";
+        let directDownload = false;
+
+        if (isImage) {
+          // KÉP: Eredeti tartalom
+          downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
+          directDownload = true;
+        } else {
+          // PDF: Thumbnail link lekérése
+          const metaRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+
+          if (!metaRes.ok) throw new Error("Meta fetch failed");
+          const metaJson = await metaRes.json();
+
+          if (metaJson.thumbnailLink) {
+            // Feljavítjuk a minőséget a Gridhez (=s500)
+            downloadUrl = metaJson.thumbnailLink.replace(/=s\d+/, "=s500");
+            directDownload = true;
+          } else {
+            // Nincs thumbnail -> marad az ikon
+            directDownload = false;
           }
-        );
+        }
 
-        if (!res.ok) throw new Error("Image fetch failed");
+        if (directDownload) {
+          // A tartalom (kép vagy thumbnail) letöltése Blob-ként
+          const res = await fetch(downloadUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
 
-        const blob = await res.blob();
-        if (!active) return;
+          if (!res.ok) throw new Error("Content fetch failed");
 
-        const objUrl = URL.createObjectURL(blob);
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        urlRef.current = objUrl;
-        setSrc(objUrl);
+          const blob = await res.blob();
+          if (!active) return;
+
+          const objUrl = URL.createObjectURL(blob);
+          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+          urlRef.current = objUrl;
+          setSrc(objUrl);
+        }
       } catch (err) {
-        console.error("Image load error:", file.name, err);
+        console.error("Preview error:", file.name, err);
         setSrc(null);
       } finally {
         if (active) setLoading(false);
@@ -81,7 +107,7 @@ interface FileCardProps {
   onRename: () => void;
   onDelete: () => void;
   onOpen?: () => void;
-  onPreviewClick?: () => void; // Ez nyitja meg a Lightboxot VAGY a Drive-ot
+  onPreviewClick?: () => void;
 }
 
 export default function FileCard({
@@ -95,7 +121,8 @@ export default function FileCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const { src: previewSrc, loading } = useDriveImagePreview(file);
+  // Az "okos" hook használata
+  const { src: previewSrc, loading } = useUnifiedDrivePreview(file);
 
   useEffect(() => {
     function handleClickOutside(e: Event) {
@@ -140,7 +167,7 @@ export default function FileCard({
             className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
           />
         ) : (
-          /* Ha nincs kép (pl. PDF), akkor Ikon + Név */
+          /* Fallback: Ikon + Név (ha pl. Word doksi, vagy nincs thumbnail) */
           <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
             <div className="mb-3 scale-125 transform transition-transform group-hover:scale-110">
               {getFileIcon(file)}
