@@ -1,80 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
-import { supabase } from "@/lib/supabaseClient";
-
-/**
- * Blob-alapú image loader lightboxhoz
- */
-function useDriveBlobImage(file: TripFile | null) {
-  const [src, setSrc] = useState<string | null>(null);
-  const urlRef = React.useRef<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      if (!file?.drive_file_id) {
-        setSrc(file?.preview_link || file?.thumbnail_link || null);
-        return;
-      }
-
-      try {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.provider_token;
-
-        if (!token) {
-          setSrc(file.preview_link || file.thumbnail_link || null);
-          return;
-        }
-
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        if (!res.ok) {
-          console.error("LIGHTBOX BLOB ERROR", res.status);
-          setSrc(file.preview_link || file.thumbnail_link || null);
-          return;
-        }
-
-        const blob = await res.blob();
-        const objectUrl = URL.createObjectURL(blob);
-
-        if (cancelled) {
-          URL.revokeObjectURL(objectUrl);
-          return;
-        }
-
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-
-        urlRef.current = objectUrl;
-        setSrc(objectUrl);
-      } catch (err) {
-        console.error("LIGHTBOX BLOB UNEXPECTED ERROR", err);
-        setSrc(file?.preview_link || file?.thumbnail_link || null);
-      }
-    }
-
-    load();
-
-    return () => {
-      cancelled = true;
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
-    };
-  }, [file?.drive_file_id]);
-
-  return src;
-}
 
 type PhotosSectionProps = {
   photoFiles: TripFile[];
@@ -99,10 +28,7 @@ type PhotosSectionProps = {
 export default function PhotosSection({
   photoFiles,
   loadingFiles,
-  filesError,
   submittingPhoto,
-  photoError,
-  photoSuccess,
   uploadFileToDriveAndSave,
   handleRenameFile,
   handleDeleteFile,
@@ -177,12 +103,15 @@ export default function PhotosSection({
     setLastTap(now);
   };
 
+  // Lightbox aktuális elem meghatározása
   const current = lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
-  const lightboxSrc = useDriveBlobImage(current);
+  
+  // URL kiválasztása: preview_link az elsődleges, ha nincs, akkor thumbnail
+  const lightboxSrc = current?.preview_link || current?.thumbnail_link || null;
 
   return (
     <>
-      {/* GRID */}
+      {/* GRID SECTION */}
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -190,7 +119,7 @@ export default function PhotosSection({
               Fotók
             </h2>
             <p className="text-xs text-slate-500">
-              A képek a Drive-ba kerülnek. A TripLog automatikusan beolvassa őket.
+              A képek a Drive-ba kerülnek.
             </p>
           </div>
 
@@ -233,23 +162,26 @@ export default function PhotosSection({
         )}
       </section>
 
-      {/* LIGHTBOX */}
+      {/* LIGHTBOX OVERLAY */}
       {current && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-3">
-          <button onClick={closeLightbox} className="absolute inset-0" />
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 backdrop-blur-sm px-3">
+          {/* Bezárás háttérre kattintva */}
+          <button onClick={closeLightbox} className="absolute inset-0 cursor-default" />
 
-          <div className="relative z-50 w-full max-w-3xl max-h-[90vh] rounded-2xl bg-black/80 p-3 md:p-4">
-            <div className="relative flex items-center justify-between">
+          <div className="relative z-50 w-full max-w-5xl h-full flex flex-col justify-center pointer-events-none">
+            <div className="relative flex items-center justify-between w-full h-full pointer-events-auto">
+              
+              {/* Balra nyíl */}
               <button
                 onClick={showPrev}
-                className="hidden h-8 w-8 md:flex items-center 
-                justify-center rounded-full bg-black/60 text-white hover:bg-black"
+                className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 backdrop-blur-md transition mx-4"
               >
                 ◀
               </button>
 
+              {/* Kép konténer */}
               <motion.div
-                className="relative flex flex-1 items-center justify-center"
+                className="relative flex flex-1 items-center justify-center h-full overflow-hidden"
                 drag={isZoomed ? false : "x"}
                 dragConstraints={{ left: 0, right: 0 }}
                 dragElastic={0.2}
@@ -260,40 +192,50 @@ export default function PhotosSection({
                     key={current.id}
                     src={lightboxSrc}
                     alt={current.name}
-                    className="max-h-[70vh] w-auto rounded-xl object-contain"
-                    style={{ scale: isZoomed ? 2 : 1 }}
+                    referrerPolicy="no-referrer"
+                    className="max-h-[85vh] max-w-full object-contain rounded-sm shadow-2xl"
+                    style={{ scale: isZoomed ? 2 : 1, cursor: isZoomed ? "zoom-out" : "zoom-in" }}
                     animate={controls}
                     drag={isZoomed}
                     dragConstraints={
                       isZoomed
-                        ? { left: -150, right: 150, top: -150, bottom: 150 }
+                        ? { left: -300, right: 300, top: -300, bottom: 300 }
                         : undefined
                     }
                     dragMomentum={false}
                     onClick={handleImageTap}
                   />
                 ) : (
-                  <div className="text-white text-xs">Betöltés...</div>
+                  <div className="text-white text-sm">Nincs elérhető előnézet</div>
                 )}
               </motion.div>
 
+              {/* Jobbra nyíl */}
               <button
                 onClick={showNext}
-                className="hidden h-8 w-8 md:flex items-center 
-                justify-center rounded-full bg-black/60 text-white hover:bg-black"
+                className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 backdrop-blur-md transition mx-4"
               >
                 ▶
               </button>
             </div>
 
+            {/* Infó sáv alul */}
             {!isZoomed && (
-              <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex justify-between px-4 text-[11px] text-slate-200">
-                <span>{current.name}</span>
-                <span>
-                  {lightboxIndex! + 1}/{photoFiles.length}
+              <div className="absolute bottom-4 left-0 right-0 flex justify-between px-6 text-xs text-white/80 pointer-events-none">
+                <span className="truncate pr-4">{current.name}</span>
+                <span className="whitespace-nowrap">
+                  {lightboxIndex! + 1} / {photoFiles.length}
                 </span>
               </div>
             )}
+            
+            {/* Bezárás gomb jobb felül (mobilon hasznos) */}
+            <button 
+                onClick={closeLightbox}
+                className="absolute top-4 right-4 z-50 p-2 text-white/70 hover:text-white pointer-events-auto bg-black/20 rounded-full md:bg-transparent"
+            >
+                ✕
+            </button>
           </div>
         </div>
       )}
