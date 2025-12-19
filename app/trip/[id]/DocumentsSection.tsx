@@ -5,14 +5,13 @@ import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
-import { getFileIcon } from "@/lib/trip/fileIcons";
 
 /**
- * Hook: Dokumentum előnézet betöltése (Csak képeknél!)
- * Ha a dokumentum valójában egy kép (pl. lefotózott számla),
- * akkor letöltjük a privát Blob-ot.
+ * Hook: Dokumentum nagy felbontású előnézete (Privát fájlokhoz).
+ * - Képek esetén: letölti a fájlt (alt=media).
+ * - PDF esetén: a Drive-al generáltat egy PNG képet az első oldalról (/export).
  */
-function useDocumentLightboxImage(file: TripFile | null) {
+function useDocumentLightboxPreview(file: TripFile | null) {
   const [src, setSrc] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
@@ -20,10 +19,16 @@ function useDocumentLightboxImage(file: TripFile | null) {
     let active = true;
 
     async function load() {
-      // Ha nincs fájl, vagy nem kép típusú, akkor nem töltünk semmit
-      // (A PDF-eket nem próbáljuk <img>-be erőltetni, arra ott az ikon)
-      const isImage = file?.mime_type?.startsWith("image/");
-      if (!file?.drive_file_id || !isImage) {
+      if (!file?.drive_file_id) {
+        setSrc(null);
+        return;
+      }
+      
+      const isImage = file.mime_type?.startsWith("image/");
+      const isPdf = file.mime_type === "application/pdf";
+
+      // Csak kép vagy PDF esetén tudunk "képes" előnézetet adni
+      if (!isImage && !isPdf) {
         setSrc(null);
         return;
       }
@@ -36,15 +41,18 @@ function useDocumentLightboxImage(file: TripFile | null) {
 
         if (!token) return;
 
-        // Privát kép letöltése
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        // Ugyanaz a logika, mint a FileCard-ban:
+        // PDF -> export képként
+        // Kép -> letöltés
+        const url = isPdf
+          ? `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`
+          : `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
 
-        if (!res.ok) throw new Error("Document blob load error");
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) throw new Error("Lightbox preview error");
 
         const blob = await res.blob();
         if (!active) return;
@@ -57,8 +65,7 @@ function useDocumentLightboxImage(file: TripFile | null) {
         setSrc(objUrl);
 
       } catch (err) {
-        console.error("Dokumentum kép betöltési hiba:", err);
-        setSrc(null);
+        console.error("Dokumentum lightbox hiba:", err);
       }
     }
 
@@ -169,14 +176,10 @@ export default function DocumentsSection({
     setLastTap(now);
   };
 
-  // Aktuális elem
   const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
   
-  // Blob betöltése (ha kép)
-  const lightboxSrc = useDocumentLightboxImage(current);
-  
-  // Ha nem kép, akkor "egyéb" módba váltunk a megjelenítésnél
-  const isImageLike = current?.mime_type?.startsWith("image/");
+  // Itt töltjük be a "képes" verziót (akár PDF, akár JPG)
+  const lightboxSrc = useDocumentLightboxPreview(current);
 
   return (
     <>
@@ -188,13 +191,8 @@ export default function DocumentsSection({
               Dokumentumok
             </h2>
             <p className="text-xs text-slate-500">
-              PDF-ek, jegyek, igazolások.
+              PDF-ek és képek előnézettel.
             </p>
-            {docFiles.length > 0 && (
-              <p className="mt-1 text-[11px] text-slate-400">
-                {docFiles.length} fájl
-              </p>
-            )}
           </div>
 
           <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
@@ -239,7 +237,6 @@ export default function DocumentsSection({
                   canManage={canManage}
                   onPreviewClick={() => openLightbox(index)}
                   onOpen={() => {
-                    // Közvetlen megnyitás (új tab) - fallback
                     if (file.drive_file_id) {
                       window.open(
                         `https://drive.google.com/file/d/${file.drive_file_id}/view`,
@@ -268,10 +265,9 @@ export default function DocumentsSection({
             aria-label="Bezárás"
           />
 
-          <div className="relative z-50 w-full max-w-4xl h-full flex flex-col justify-center pointer-events-none">
+          <div className="relative z-50 w-full max-w-5xl h-full flex flex-col justify-center pointer-events-none">
             <div className="relative flex items-center justify-between w-full h-full pointer-events-auto">
               
-              {/* Balra (Desktop) */}
               <button
                 type="button"
                 onClick={showPrev}
@@ -280,16 +276,15 @@ export default function DocumentsSection({
                 ◀
               </button>
 
-              {/* KÖZÉPSŐ TARTALOM */}
               <motion.div
                 className="relative flex flex-1 items-center justify-center h-full overflow-hidden"
-                drag={isZoomed && isImageLike ? false : "x"}
+                drag={isZoomed ? false : "x"}
                 dragConstraints={{ left: 0, right: 0 }}
                 dragElastic={0.2}
                 onDragEnd={handleDragEnd}
               >
-                {/* 1. ESET: Kép típusú dokumentum -> Blob preview */}
-                {isImageLike && lightboxSrc ? (
+                {/* Ha sikerült képet csinálni belőle (PDF vagy JPG), akkor azt mutatjuk */}
+                {lightboxSrc ? (
                   <motion.img
                     key={current.id}
                     src={lightboxSrc}
@@ -307,36 +302,16 @@ export default function DocumentsSection({
                     onClick={handleImageTap}
                   />
                 ) : (
-                  /* 2. ESET: PDF / egyéb / betöltés alatt -> Ikon + Gomb */
-                  <div className="flex flex-col items-center justify-center gap-6 text-white animate-in fade-in zoom-in duration-300">
-                    <div className="transform scale-150">
-                        {getFileIcon(current)}
-                    </div>
-                    
-                    <div className="text-center">
-                        <div className="text-lg font-medium mb-1">{current.name}</div>
-                        <div className="text-xs text-white/60 uppercase tracking-wider">{current.mime_type?.split("/").pop()}</div>
-                    </div>
-
-                    {current.drive_file_id && (
-                      <a
-                        href={`https://drive.google.com/file/d/${current.drive_file_id}/view`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-full bg-white text-black px-6 py-3 text-sm font-semibold hover:bg-slate-200 transition shadow-lg"
-                      >
-                        Megnyitás Drive-ban ↗
-                      </a>
-                    )}
-                    
-                    {isImageLike && !lightboxSrc && (
-                         <div className="text-xs text-white/50 mt-2">Kép betöltése...</div>
-                    )}
+                  // Ha még töltődik, vagy nem támogatott formátum
+                  <div className="flex flex-col items-center justify-center gap-4 text-white animate-pulse">
+                     <div className="text-sm">Előnézet betöltése...</div>
+                     {current.mime_type === "application/pdf" && (
+                         <div className="text-xs text-white/60">(PDF konvertálása)</div>
+                     )}
                   </div>
                 )}
               </motion.div>
 
-              {/* Jobbra (Desktop) */}
               <button
                 type="button"
                 onClick={showNext}
@@ -346,17 +321,30 @@ export default function DocumentsSection({
               </button>
             </div>
 
-            {/* Infó sáv (Zoom alatt eltűnik) */}
+            {/* Infó sáv */}
             {!isZoomed && (
-              <div className="absolute bottom-4 left-0 right-0 flex justify-between px-6 text-xs text-white/80 pointer-events-none">
-                <span className="truncate pr-4">{current.name}</span>
-                <span>
-                  {lightboxIndex! + 1} / {docFiles.length}
-                </span>
+              <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 pointer-events-auto">
+                 {/* PDF-nél egy extra gomb, ha a konverzió nem lenne elég jó */}
+                 {current.mime_type === "application/pdf" && (
+                    <a
+                      href={`https://drive.google.com/file/d/${current.drive_file_id}/view`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-full bg-white/20 px-4 py-1 text-[10px] text-white hover:bg-white/30 backdrop-blur-md mb-2"
+                    >
+                      Eredeti PDF megnyitása ↗
+                    </a>
+                 )}
+
+                <div className="flex justify-between w-full px-6 text-xs text-white/80 pointer-events-none">
+                    <span className="truncate pr-4">{current.name}</span>
+                    <span>
+                    {lightboxIndex! + 1} / {docFiles.length}
+                    </span>
+                </div>
               </div>
             )}
 
-            {/* Bezárás gomb (Jobb felül) */}
             <button 
                 onClick={closeLightbox}
                 className="absolute top-4 right-4 z-50 p-2 text-white/70 hover:text-white pointer-events-auto bg-black/20 rounded-full md:bg-transparent"

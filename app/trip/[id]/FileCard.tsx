@@ -6,63 +6,59 @@ import { getFileIcon } from "@/lib/trip/fileIcons";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: Google token beszerzése és kép letöltése Blob-ként.
- * Ez a kulcs a privát fájlok megjelenítéséhez.
+ * Hook: Kép letöltése VAGY PDF első oldalának exportálása képként.
+ * Ez teszi lehetővé, hogy a PDF-ek is "galéria-szerűen" jelenjenek meg.
  */
-function usePrivateDriveImage(file: TripFile) {
+function usePrivateDrivePreview(file: TripFile) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // URL ref, hogy ne folyjon a memória (memory leak prevention)
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     async function load() {
-      // Csak akkor foglalkozunk vele, ha kép
+      // Csak Képek és PDF-ek esetén próbálkozunk előnézettel
       const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
-      if (!isImage || !file.drive_file_id) {
+      const isPdf = file.mime_type === "application/pdf";
+
+      if ((!isImage && !isPdf) || !file.drive_file_id) {
         return;
       }
 
       setLoading(true);
 
       try {
-        // 1. Token megszerzése
         const { data } = await supabase.auth.getSession();
         const token = data.session?.provider_token;
 
         if (!token) {
-          console.warn("Nincs Google token, nem lehet betölteni a privát képet.");
           setLoading(false);
           return;
         }
 
-        // 2. Kép letöltése a Drive API-n keresztül (alt=media)
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        // TRÜKK: Ha PDF, akkor exportáljuk PNG-be. Ha kép, akkor letöltjük.
+        const url = isPdf
+          ? `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}/export?mimeType=image/png`
+          : `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
 
-        if (!res.ok) throw new Error("Drive fetch error");
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-        // 3. Blob készítése
+        if (!res.ok) throw new Error("Preview fetch error");
+
         const blob = await res.blob();
         if (!active) return;
 
-        // 4. Object URL létrehozása
         const objUrl = URL.createObjectURL(blob);
         
-        // Ha volt előző, takarítunk
         if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        
         urlRef.current = objUrl;
         setSrc(objUrl);
 
       } catch (err) {
-        console.error("Kép betöltési hiba:", err);
+        console.error("Előnézet hiba:", err);
         setSrc(null);
       } finally {
         if (active) setLoading(false);
@@ -73,9 +69,7 @@ function usePrivateDriveImage(file: TripFile) {
 
     return () => {
       active = false;
-      if (urlRef.current) {
-        URL.revokeObjectURL(urlRef.current);
-      }
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     };
   }, [file.drive_file_id, file.type, file.mime_type]);
 
@@ -87,8 +81,8 @@ interface FileCardProps {
   canManage: boolean;
   onRename: () => void;
   onDelete: () => void;
-  onOpen?: () => void; // dokumentum esetén
-  onPreviewClick?: () => void; // lightbox
+  onOpen?: () => void;
+  onPreviewClick?: () => void;
 }
 
 export default function FileCard({
@@ -102,8 +96,8 @@ export default function FileCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // Itt használjuk a privát betöltőt
-  const { src: imageSrc, loading } = usePrivateDriveImage(file);
+  // Az új okos hookot használjuk
+  const { src: previewSrc, loading } = usePrivateDrivePreview(file);
 
   useEffect(() => {
     function handleClickOutside(e: Event) {
@@ -128,10 +122,9 @@ export default function FileCard({
     };
   }, [menuOpen]);
 
-  // Ha documentum, vagy nincs kép, akkor ikon
-  // Ha kép, akkor a letöltött Blob URL
-  const showImage = !!imageSrc;
-  
+  // Van-e előnézetünk? (Ez most már PDF-re is igaz lehet!)
+  const hasPreview = !!previewSrc;
+
   return (
     <div className="group relative rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
       <button
@@ -141,11 +134,11 @@ export default function FileCard({
       >
         {loading ? (
           <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-            Betöltés...
+            Előnézet betöltése...
           </div>
-        ) : showImage ? (
+        ) : hasPreview ? (
           <img
-            src={imageSrc!}
+            src={previewSrc!}
             alt={file.name}
             className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
           />
