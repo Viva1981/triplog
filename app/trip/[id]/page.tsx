@@ -123,10 +123,11 @@ export default function TripDetailPage() {
       setLoadingFiles(true);
       setFilesError(null);
 
+      // JAVÍTÁS 1: Hozzáadtuk a "mime_type" mezőt a lekérdezéshez!
       const { data, error } = await supabase
         .from("trip_files")
         .select(
-          "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link"
+          "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link, mime_type"
         )
         .eq("trip_id", tripId)
         .order("created_at", { ascending: true });
@@ -248,7 +249,7 @@ export default function TripDetailPage() {
     return folderId;
   };
 
-  // Feltöltés Drive-ra + trip_files mentés (JAVÍTVA)
+  // Feltöltés Drive-ra + trip_files mentés
   const uploadFileToDriveAndSave = async (
     type: "photo" | "document",
     file: File
@@ -309,7 +310,6 @@ export default function TripDetailPage() {
         base64Data +
         closeDelimiter;
 
-      // 🔧 ITT A FŐ FIX: webContentLink is kérve
       const uploadRes = await fetch(
         "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,thumbnailLink,webViewLink,webContentLink",
         {
@@ -338,7 +338,6 @@ export default function TripDetailPage() {
       const webContent =
         (uploaded.webContentLink as string | undefined | null) ?? null;
 
-      // 👉 EBBŐL LESZ A LIGHTBOX NAGY KÉP
       const previewUrl =
         webContent ||
         (file.type?.startsWith("image/")
@@ -357,10 +356,11 @@ export default function TripDetailPage() {
           name: displayName,
           mime_type: file.type || null,
           thumbnail_link: thumb,
-          preview_link: previewUrl, // 👈 Itt már a jó URL megy be
+          preview_link: previewUrl,
         })
+        // JAVÍTÁS 2: Itt is hozzáadtuk a "mime_type"-ot a visszatérő adatokhoz
         .select(
-          "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link"
+          "id, type, user_id, name, drive_file_id, thumbnail_link, preview_link, mime_type"
         )
         .single();
 
@@ -587,7 +587,6 @@ export default function TripDetailPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-5xl mx-auto px-4 py-6">
-        {/* Vissza link */}
         <div className="mb-4 flex items-center justify-between">
           <Link
             href="/"
@@ -597,7 +596,6 @@ export default function TripDetailPage() {
           </Link>
         </div>
 
-        {/* Fő info kártya */}
         <TripHeader
           trip={trip}
           user={user}
@@ -607,7 +605,6 @@ export default function TripDetailPage() {
           onScrollToExpenses={handleScrollToExpenses}
         />
 
-        {/* Szekciók – fotók, dokumentumok, jegyzet, költségek */}
         <section className="grid gap-4 md:grid-cols-2 mb-4">
           <PhotosSection
             photoFiles={photoFiles}
@@ -637,7 +634,6 @@ export default function TripDetailPage() {
 
           <NotesSection tripId={trip.id} initialNotes={trip.notes ?? null} />
 
-          {/* IDE kerül az anchor, amire a TripHeader gomb scrolloz */}
           <div id="expenses-section">
             <ExpensesSection tripId={trip.id} userId={user?.id ?? null} />
           </div>
