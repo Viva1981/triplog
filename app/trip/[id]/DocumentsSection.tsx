@@ -7,10 +7,10 @@ import { motion, PanInfo, useAnimation } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
- * Hook: Lightbox nagy felbontású előnézet (Kép és PDF).
- * Ugyanaz a logika, mint a FileCard-ban, csak nagyobb felbontással.
+ * Hook: Dokumentum Lightbox (Képek és PDF thumbnail).
+ * Ugyanaz a logika, mint a FileCard-ban, csak nagy felbontással.
  */
-function useUnifiedLightboxPreview(file: TripFile | null) {
+function useDocumentLightbox(file: TripFile | null) {
   const [src, setSrc] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
@@ -18,22 +18,21 @@ function useUnifiedLightboxPreview(file: TripFile | null) {
     let active = true;
 
     async function load() {
-      // Alapvető ellenőrzések
+      // 1. Validálás
       if (!file?.drive_file_id) {
         setSrc(null);
         return;
       }
       
-      const mime = file.mime_type || "";
-      const isImage = mime.startsWith("image/");
-      const isPdf = mime === "application/pdf";
+      // Detektálás: Kép vagy PDF?
+      const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
+      const isPdf = file.mime_type === "application/pdf";
 
       if (!isImage && !isPdf) {
         setSrc(null);
         return;
       }
 
-      // Előző kép törlése betöltés előtt
       setSrc(null);
 
       try {
@@ -45,54 +44,44 @@ function useUnifiedLightboxPreview(file: TripFile | null) {
         let downloadUrl = "";
 
         if (isImage) {
-          // Kép: Eredeti letöltése
+          // KÉP: Eredeti letöltés
           downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`;
-          
-          const res = await fetch(downloadUrl, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (!res.ok) throw new Error("Lightbox image fetch error");
-          
-          const blob = await res.blob();
-          if (!active) return;
-          
-          const objUrl = URL.createObjectURL(blob);
-          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-          urlRef.current = objUrl;
-          setSrc(objUrl);
-
-        } else if (isPdf) {
-          // PDF: Thumbnail API lekérdezés
+        } else {
+          // PDF: Thumbnail lekérés
           const metaUrl = `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=thumbnailLink`;
           const metaRes = await fetch(metaUrl, {
             headers: { Authorization: `Bearer ${token}` },
           });
           
-          if (!metaRes.ok) throw new Error("Lightbox meta fetch error");
+          if (!metaRes.ok) throw new Error("Meta fail");
           const metaJson = await metaRes.json();
 
-          if (!metaJson.thumbnailLink) throw new Error("No thumbnail");
-
-          // Nagy felbontás (s1600 = 1600px széles)
-          const thumbUrl = metaJson.thumbnailLink.replace(/=s\d+/, "=s1600");
-
-          const thumbRes = await fetch(thumbUrl, {
-             headers: { Authorization: `Bearer ${token}` },
-          });
-          
-          if (!thumbRes.ok) throw new Error("Lightbox thumb fetch error");
-          
-          const blob = await thumbRes.blob();
-          if (!active) return;
-          
-          const objUrl = URL.createObjectURL(blob);
-          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-          urlRef.current = objUrl;
-          setSrc(objUrl);
+          if (metaJson.thumbnailLink) {
+             // Nagy felbontás (=s1600)
+             downloadUrl = metaJson.thumbnailLink.replace(/=s\d+/, "=s1600");
+          } else {
+             throw new Error("No thumb");
+          }
         }
 
+        // Tényleges letöltés (tokennel!)
+        const res = await fetch(downloadUrl, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) throw new Error("Blob fetch error");
+
+        const blob = await res.blob();
+        if (!active) return;
+
+        const objUrl = URL.createObjectURL(blob);
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = objUrl;
+        
+        setSrc(objUrl);
+
       } catch (err) {
-        console.error("Lightbox load failed:", err);
+        console.error("Lightbox load error:", err);
       }
     }
 
@@ -102,7 +91,7 @@ function useUnifiedLightboxPreview(file: TripFile | null) {
       active = false;
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     };
-  }, [file?.drive_file_id, file?.mime_type]);
+  }, [file?.drive_file_id, file?.mime_type, file?.type]);
 
   return src;
 }
@@ -204,9 +193,7 @@ export default function DocumentsSection({
   };
 
   const current = lightboxIndex !== null ? docFiles[lightboxIndex] : null;
-  
-  // A javított hook használata
-  const lightboxSrc = useUnifiedLightboxPreview(current);
+  const lightboxSrc = useDocumentLightbox(current);
 
   return (
     <>
@@ -261,7 +248,6 @@ export default function DocumentsSection({
                   canManage={canManage}
                   onPreviewClick={() => openLightbox(index)}
                   onOpen={() => {
-                    // Fallback: új lapon megnyitás
                     if (file.drive_file_id) {
                       window.open(
                         `https://drive.google.com/file/d/${file.drive_file_id}/view`,
@@ -328,9 +314,7 @@ export default function DocumentsSection({
                 ) : (
                   <div className="flex flex-col items-center justify-center gap-4 text-white animate-pulse">
                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
-                     <div className="text-sm">
-                       {current.mime_type === "application/pdf" ? "PDF előnézet generálása..." : "Kép betöltése..."}
-                     </div>
+                     <div className="text-sm">Előnézet betöltése...</div>
                   </div>
                 )}
               </motion.div>
@@ -346,7 +330,6 @@ export default function DocumentsSection({
 
             {!isZoomed && (
               <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-2 pointer-events-auto">
-                 {/* PDF-nél egy extra gomb */}
                  {current.mime_type === "application/pdf" && (
                     <a
                       href={`https://drive.google.com/file/d/${current.drive_file_id}/view`}
