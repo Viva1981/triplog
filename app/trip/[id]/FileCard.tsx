@@ -5,11 +5,6 @@ import type { TripFile } from "@/lib/trip/types";
 import { getFileIcon } from "@/lib/trip/fileIcons";
 import { supabase } from "@/lib/supabaseClient";
 
-/**
- * Hook: Kizárólag a KÉPEK (jpg, png) előnézetét tölti be.
- * Minden más fájltípusnál (PDF, Doc) azonnal null-t ad vissza,
- * így az ikonnézet azonnal megjelenik.
- */
 function useImageOnlyPreview(file: TripFile) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -19,8 +14,6 @@ function useImageOnlyPreview(file: TripFile) {
     let active = true;
 
     async function load() {
-      // Csak akkor foglalkozunk vele, ha TÉNYLEG kép.
-      // A PDF-eket itt szándékosan kihagyjuk, hogy ikonként jelenjenek meg.
       const isImage = file.type === "photo" || file.mime_type?.startsWith("image/");
       
       if (!isImage || !file.drive_file_id) {
@@ -39,7 +32,6 @@ function useImageOnlyPreview(file: TripFile) {
           return;
         }
 
-        // Kép letöltése (alt=media)
         const res = await fetch(
           `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
           {
@@ -81,8 +73,8 @@ interface FileCardProps {
   canManage: boolean;
   onRename: () => void;
   onDelete: () => void;
-  onOpen?: () => void;        // Ez a "Megnyitás Drive-ban" menüpont
-  onPreviewClick?: () => void; // Ez a főkártyára kattintás
+  onOpen?: () => void;
+  onPreviewClick?: () => void;
 }
 
 export default function FileCard({
@@ -131,33 +123,27 @@ export default function FileCard({
         className="flex h-40 w-full flex-col overflow-hidden rounded-2xl sm:h-48 md:h-[200px] lg:h-[220px] xl:h-[240px]"
       >
         {loading ? (
-          // 1. Állapot: Töltés (csak képeknél fordulhat elő rövid ideig)
           <div className="flex h-full w-full items-center justify-center bg-slate-50">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-500"></div>
           </div>
         ) : hasPreview ? (
-          // 2. Állapot: Kép előnézet (Full bleed)
           <img
             src={previewSrc!}
             alt={file.name}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
-          // 3. Állapot: Dokumentum / PDF (Profi Ikon + Név)
           <div className="flex h-full w-full flex-col items-center justify-center bg-white p-4 text-center">
-            {/* Ikon konténer: finom háttérrel kiemelve */}
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 shadow-sm transition-transform duration-300 group-hover:-translate-y-1 group-hover:shadow-md group-hover:bg-slate-100">
               <div className="scale-125 transform">
                 {getFileIcon(file)}
               </div>
             </div>
             
-            {/* Fájlnév: jobban olvasható, több soros */}
             <div className="w-full px-2">
               <p className="line-clamp-3 text-xs font-semibold leading-relaxed text-slate-700 break-words">
                 {file.name}
               </p>
-              {/* Kiegészítő infó (típus) */}
               <p className="mt-1 text-[10px] font-medium text-slate-400 uppercase tracking-wide">
                 {file.mime_type?.split("/").pop()?.toUpperCase() || "FÁJL"}
               </p>
@@ -166,9 +152,10 @@ export default function FileCard({
         )}
       </button>
 
-      {/* Kebab menü (Jobb felül) */}
+      {/* Kebab menü */}
       {canManage && (
-        <div ref={menuRef} className="absolute right-2 top-2 z-20">
+        // JAVÍTÁS: Z-Index csökkentve z-20 -> z-10, hogy a Header (ami valószínűleg z-20+) takarja
+        <div ref={menuRef} className="absolute right-2 top-2 z-10">
           <button
             type="button"
             onClick={(e) => {
@@ -181,7 +168,8 @@ export default function FileCard({
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 mt-1 w-48 rounded-xl border border-slate-200 bg-white text-sm shadow-xl z-30 overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+            // JAVÍTÁS: Z-Index csökkentve z-30 -> z-20
+            <div className="absolute right-0 mt-1 w-40 rounded-xl border border-slate-200 bg-white text-sm shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
               {onOpen && (
                 <button
                   type="button"
@@ -189,9 +177,10 @@ export default function FileCard({
                     setMenuOpen(false);
                     onOpen();
                   }}
-                  className="w-full px-4 py-2.5 text-left hover:bg-slate-50 transition-colors flex items-center gap-2"
+                  // JAVÍTÁS: Emojik törölve
+                  className="w-full px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
                 >
-                  <span>📂</span> Megnyitás Drive-ban
+                  Megnyitás Drive-ban
                 </button>
               )}
 
@@ -201,9 +190,10 @@ export default function FileCard({
                   setMenuOpen(false);
                   onRename();
                 }}
-                className="w-full px-4 py-2.5 text-left hover:bg-slate-50 transition-colors flex items-center gap-2"
+                // JAVÍTÁS: Emojik törölve
+                className="w-full px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
               >
-                <span>✏️</span> Átnevezés
+                Átnevezés
               </button>
 
               <div className="h-px bg-slate-100 my-1"></div>
@@ -214,9 +204,10 @@ export default function FileCard({
                   setMenuOpen(false);
                   onDelete();
                 }}
-                className="w-full px-4 py-2.5 text-left text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+                // JAVÍTÁS: Emojik törölve
+                className="w-full px-4 py-2.5 text-left text-red-600 hover:bg-red-50 transition-colors"
               >
-                <span>🗑️</span> Törlés
+                Törlés
               </button>
             </div>
           )}

@@ -44,10 +44,6 @@ export default function DocumentsSection({
     e.target.value = "";
   };
 
-  /**
-   * Megnyitja a fájlt a Google Drive beépített nézegetőjében (új fülön).
-   * Ez a legbiztosabb módja a PDF-ek, Doc-ok kezelésének.
-   */
   const openInDrive = (file: TripFile) => {
     if (file.drive_file_id) {
       window.open(
@@ -130,9 +126,9 @@ export default function DocumentsSection({
                 key={file.id}
                 file={file}
                 canManage={canManage}
-                // Itt a logika: Kattintásra Drive megnyitás
                 onPreviewClick={() => openInDrive(file)}
-                onOpen={() => openInDrive(file)}
+                // JAVÍTÁS: KIVETTÜK az onOpen={...} propot
+                // így a menüben NEM jelenik meg a "Megnyitás Drive-ban"
                 onRename={() => handleRenameFile(file)}
                 onDelete={() =>
                   handleDeleteFile(file.id, "document", file.drive_file_id)
