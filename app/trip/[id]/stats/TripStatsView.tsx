@@ -4,6 +4,28 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../../lib/supabaseClient";
 import type { Trip, TripExpense, TripMember } from "../../../../lib/trip/types";
 
+// --- BECSÜLT ÁRFOLYAMOK A VIZUÁLIS MEGJELENÍTÉSHEZ ---
+// Ez csak a csíkok hosszát befolyásolja, a kiírt összegeket NEM!
+// Bázis: HUF
+const ESTIMATED_RATES: Record<string, number> = {
+  HUF: 1,
+  EUR: 400,
+  USD: 380,
+  GBP: 480,
+  CHF: 430,
+  PLN: 95,
+  CZK: 16,
+  RON: 80,
+  HRK: 53,
+  RSD: 3.4,
+};
+
+// Segédfüggvény: Érték normalizálása HUF-ra
+function getNormalizedValue(amount: number, currency: string): number {
+  const rate = ESTIMATED_RATES[currency.toUpperCase()] || 1; // Ha ismeretlen, 1:1
+  return amount * rate;
+}
+
 type TripStatsViewProps = {
   trip: Trip;
   currentUserId: string | null;
@@ -252,34 +274,37 @@ export default function TripStatsView({
         amount,
       }));
 
-      byCurrency.sort((a, b) => b.amount - a.amount);
+      // Belső rendezés: a legnagyobb ÉRTÉKŰ legyen elöl (normalizálva)
+      byCurrency.sort((a, b) => 
+        getNormalizedValue(b.amount, b.currency) - getNormalizedValue(a.amount, a.currency)
+      );
 
       rows.push({ category, byCurrency });
     }
 
-    // kategóriák rendezése teljes összeg szerint
+    // Kategóriák rendezése: a legnagyobb összértékű legyen felül (normalizálva)
     rows.sort((a, b) => {
-      const sumA = a.byCurrency.reduce((s, x) => s + x.amount, 0);
-      const sumB = b.byCurrency.reduce((s, x) => s + x.amount, 0);
+      const sumA = a.byCurrency.reduce((s, x) => s + getNormalizedValue(x.amount, x.currency), 0);
+      const sumB = b.byCurrency.reduce((s, x) => s + getNormalizedValue(x.amount, x.currency), 0);
       return sumB - sumA;
     });
 
     return rows;
   }, [filteredExpenses]);
 
-  // max érték pénznemenként a progress bar normalizáláshoz
-  const maxAmountPerCurrency = useMemo(() => {
-    const map = new Map<string, number>();
+  // --- GLOBÁLIS MAXIMUM (Kategória nézethez) ---
+  // Megkeressük a legdrágább tételt (bármilyen pénznemben), hogy ahhoz igazítsuk a csíkokat
+  const globalMaxCategoryValue = useMemo(() => {
+    let max = 0;
     for (const row of categoryRows) {
       for (const item of row.byCurrency) {
-        const prev = map.get(item.currency) || 0;
-        if (item.amount > prev) {
-          map.set(item.currency, item.amount);
-        }
+        const val = getNormalizedValue(item.amount, item.currency);
+        if (val > max) max = val;
       }
     }
-    return map;
+    return max;
   }, [categoryRows]);
+
 
   // --- Pénznemek × Fizetési mód ---
 
@@ -311,15 +336,20 @@ export default function TripStatsView({
       rows.push({ currency, total, byMethod: byMethodArr });
     }
 
-    rows.sort((a, b) => b.total - a.total);
+    // Rendezés a normalizált összérték szerint
+    rows.sort((a, b) => 
+      getNormalizedValue(b.total, b.currency) - getNormalizedValue(a.total, a.currency)
+    );
 
     return rows;
   }, [filteredExpenses]);
 
-  const maxCurrencyAmount =
-    currencyPaymentRows.length > 0
-      ? Math.max(...currencyPaymentRows.map((r) => r.total))
-      : 0;
+  // Max érték a csíkokhoz (normalizálva)
+  const maxCurrencyTotalNormalized = useMemo(() => {
+    if (currencyPaymentRows.length === 0) return 0;
+    return Math.max(...currencyPaymentRows.map(r => getNormalizedValue(r.total, r.currency)));
+  }, [currencyPaymentRows]);
+
 
   // --- Részletes: Útitárs → pénznem × kategória ---
 
@@ -371,26 +401,32 @@ export default function TripStatsView({
     const rows = Array.from(map.values());
 
     for (const row of rows) {
-      row.byCategoryCurrency.sort((a, b) => b.amount - a.amount);
+      // Rendezés értéke szerint
+      row.byCategoryCurrency.sort((a, b) => 
+        getNormalizedValue(b.amount, b.currency) - getNormalizedValue(a.amount, a.currency)
+      );
     }
 
+    // User sorrend normalizált összérték szerint
     rows.sort((a, b) => {
-      const sumA = Object.values(a.totalsByCurrency).reduce((s, x) => s + x, 0);
-      const sumB = Object.values(b.totalsByCurrency).reduce((s, x) => s + x, 0);
+      const sumA = Object.entries(a.totalsByCurrency).reduce((s, [c, v]) => s + getNormalizedValue(v, c), 0);
+      const sumB = Object.entries(b.totalsByCurrency).reduce((s, [c, v]) => s + getNormalizedValue(v, c), 0);
       return sumB - sumA;
     });
 
     return rows;
   }, [filteredExpenses, members, currentUserId, currentUserDisplayName]);
 
-  const maxUserTotal =
-    detailedUserRows.length > 0
-      ? Math.max(
-          ...detailedUserRows.map((u) =>
-            Object.values(u.totalsByCurrency).reduce((sum, v) => sum + v, 0)
-          )
-        )
-      : 0;
+  // Max user költés (normalizálva)
+  const maxUserTotalNormalized = useMemo(() => {
+    if (detailedUserRows.length === 0) return 0;
+    return Math.max(
+      ...detailedUserRows.map((u) =>
+        Object.entries(u.totalsByCurrency).reduce((sum, [c, v]) => sum + getNormalizedValue(v, c), 0)
+      )
+    );
+  }, [detailedUserRows]);
+
 
   const groupCount =
     groupMode === "category"
@@ -555,7 +591,7 @@ export default function TripStatsView({
         </div>
       </div>
 
-      {/* Összesítő badge-ek – TripHeader stílus */}
+      {/* Összesítő badge-ek */}
       <div className="flex flex-wrap gap-2 mb-4">
         {Object.keys(totalsByCurrency).length > 0 ? (
           Object.entries(totalsByCurrency).map(([cur, amt]) => (
@@ -573,7 +609,6 @@ export default function TripStatsView({
           </span>
         )}
 
-        {/* Számláló badge-ek */}
         {groupMode !== "user" && (
           <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-100 text-[11px] text-slate-700">
             {groupMode === "category" && "Kategóriák száma:"}
@@ -596,7 +631,7 @@ export default function TripStatsView({
         </p>
       ) : (
         <>
-          {/* Kategóriák × Pénznem */}
+          {/* --- KATEGÓRIA NÉZET --- */}
           {groupMode === "category" && (
             <div className="space-y-3">
               {categoryRows.map((row) => (
@@ -617,8 +652,10 @@ export default function TripStatsView({
 
                   <div className="space-y-2">
                     {row.byCurrency.map((item) => {
-                      const maxCur = maxAmountPerCurrency.get(item.currency) || 0;
-                      const ratio = maxCur > 0 ? (item.amount / maxCur) * 100 : 0;
+                      // ITT A VÁLTOZTATÁS:
+                      // Nem a pénznemen belüli maxhoz, hanem a GLOBÁLIS maxhoz mérünk
+                      const valNorm = getNormalizedValue(item.amount, item.currency);
+                      const ratio = globalMaxCategoryValue > 0 ? (valNorm / globalMaxCategoryValue) * 100 : 0;
                       const width = Math.max(8, ratio);
 
                       return (
@@ -631,7 +668,7 @@ export default function TripStatsView({
                           </div>
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                             <div
-                              className="h-2 bg-[#16ba53] rounded-full"
+                              className="h-2 bg-[#16ba53] rounded-full transition-all duration-500"
                               style={{ width: `${width}%` }}
                             />
                           </div>
@@ -643,19 +680,19 @@ export default function TripStatsView({
               ))}
 
               <p className="mt-2 text-[10px] text-slate-400">
-                A kategóriák a rögzített költségek &quot;Kategória&quot; mezője alapján
-                számolódnak. Több pénznem esetén ugyanaz a kategória több sorban, pénznemenként
-                jelenhet meg.
+                A csíkok hossza becsült árfolyamon átszámolva arányos (pl. 1 EUR ≈ 400 HUF).
               </p>
             </div>
           )}
 
-          {/* Pénznemek × Fizetési mód */}
+          {/* --- PÉNZNEM NÉZET --- */}
           {groupMode === "currency" && (
             <div className="space-y-3">
               {currencyPaymentRows.map((row) => {
+                // ITT IS: Normalizált érték alapján számoljuk a szélességet
+                const valNorm = getNormalizedValue(row.total, row.currency);
                 const ratio =
-                  maxCurrencyAmount > 0 ? (row.total / maxCurrencyAmount) * 100 : 0;
+                  maxCurrencyTotalNormalized > 0 ? (valNorm / maxCurrencyTotalNormalized) * 100 : 0;
                 const width = Math.max(8, ratio);
 
                 return (
@@ -674,7 +711,7 @@ export default function TripStatsView({
 
                     <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
                       <div
-                        className="h-2 bg-[#16ba53] rounded-full"
+                        className="h-2 bg-[#16ba53] rounded-full transition-all duration-500"
                         style={{ width: `${width}%` }}
                       />
                     </div>
@@ -697,23 +734,23 @@ export default function TripStatsView({
               })}
 
               <p className="mt-2 text-[10px] text-slate-400">
-                Itt pénznemenként összesítjük a költéseket, és megmutatjuk, milyen
-                fizetési módokkal (kártya, készpénz, online, stb.) fizettél.
+                Itt pénznemenként összesítjük a költéseket.
               </p>
             </div>
           )}
 
-          {/* Részletes: Útitársak szerint */}
+          {/* --- RÉSZLETES (USER) NÉZET --- */}
           {groupMode === "user" && (
             <div className="space-y-3">
               {detailedUserRows.map((row) => {
-                const totalAll = Object.values(row.totalsByCurrency).reduce(
-                  (sum, v) => sum + v,
+                // Összes költés normalizálva
+                const totalNorm = Object.entries(row.totalsByCurrency).reduce(
+                  (sum, [c, v]) => sum + getNormalizedValue(v, c),
                   0
                 );
 
                 const ratio =
-                  maxUserTotal > 0 ? (totalAll / maxUserTotal) * 100 : 0;
+                  maxUserTotalNormalized > 0 ? (totalNorm / maxUserTotalNormalized) * 100 : 0;
                 const width = Math.max(8, ratio);
 
                 const totalSummary = Object.entries(row.totalsByCurrency)
@@ -734,7 +771,7 @@ export default function TripStatsView({
 
                     <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
                       <div
-                        className="h-2 bg-[#16ba53] rounded-full"
+                        className="h-2 bg-[#16ba53] rounded-full transition-all duration-500"
                         style={{ width: `${width}%` }}
                       />
                     </div>
@@ -765,8 +802,7 @@ export default function TripStatsView({
       {periodMode === "all" && (
         <p className="mt-4 text-[10px] text-slate-400">
           Az &quot;Utazáshoz rögzítve&quot; nézet minden ehhez az utazáshoz felvitt költést
-          tartalmaz, függetlenül attól, hogy ténylegesen mikor fizetted ki őket (pl. előre
-          kifizetett szállás).
+          tartalmaz.
         </p>
       )}
     </section>
