@@ -36,7 +36,6 @@ export default function DocumentsSection({
   handleDeleteFile,
   currentUserId,
 }: DocumentsSectionProps) {
-  
   const handleDocChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -54,23 +53,18 @@ export default function DocumentsSection({
   };
 
   return (
-    <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5 h-full">
+    <section className="h-full rounded-3xl bg-white p-4 shadow-sm md:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-slate-900">
             Dokumentumok
           </h2>
           <p className="text-xs text-slate-500">
-            PDF-ek, jegyek, igazolások.
+            A dokumentumok az utazás Drive mappájába kerülnek.
           </p>
-          {docFiles.length > 0 && (
-            <p className="mt-1 text-[11px] font-medium text-slate-400">
-              {docFiles.length} fájl feltöltve
-            </p>
-          )}
         </div>
 
-        <label className="group inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-emerald-600 hover:shadow-md hover:scale-105 active:scale-95">
+        <label className="group inline-flex cursor-pointer items-center justify-center rounded-full bg-[#16ba53] px-4 py-2 text-xs font-bold text-white transition-all hover:scale-105 hover:opacity-90 hover:shadow-md active:scale-95">
           <input
             type="file"
             className="hidden"
@@ -78,41 +72,57 @@ export default function DocumentsSection({
             disabled={submittingDoc}
           />
           {submittingDoc ? (
-             <span className="flex items-center gap-2">
-               <svg className="animate-spin h-3 w-3 text-white" viewBox="0 0 24 24">
-                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-               </svg>
-               Feltöltés...
-             </span>
+            <span className="flex items-center gap-2">
+              <svg
+                className="h-3 w-3 animate-spin text-white"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              Feltöltés...
+            </span>
           ) : (
-             "Feltöltés"
+            "Feltöltés"
           )}
         </label>
       </div>
 
       {(docError || filesError) && (
-        <div className="mb-4 rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-xs font-medium text-red-700">
+        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-medium text-red-700">
           ⚠️ {docError || filesError}
         </div>
       )}
 
       {docSuccess && (
-        <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3 text-xs font-medium text-emerald-700 flex items-center gap-2">
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-700">
           ✅ {docSuccess}
         </div>
       )}
 
       {loadingFiles ? (
         <div className="py-8 text-center">
-            <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-emerald-500 mb-2"></div>
-            <p className="text-xs text-slate-400">Dokumentumok betöltése...</p>
+          <div className="mb-2 inline-block h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-[#16ba53]"></div>
+          <p className="text-xs text-slate-400">Dokumentumok betöltése...</p>
         </div>
       ) : docFiles.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 text-center rounded-2xl border-2 border-dashed border-slate-100 bg-slate-50/50">
-          <div className="text-2xl mb-2">📂</div>
-          <p className="text-sm font-medium text-slate-600">Még nincs dokumentum</p>
-          <p className="text-xs text-slate-400 mt-1 max-w-[200px]">
+        <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-100 bg-slate-50/50 py-10 text-center">
+          <div className="mb-2 text-2xl">📂</div>
+          <p className="text-sm font-medium text-slate-600">
+            Még nincs dokumentum
+          </p>
+          <p className="mt-1 max-w-[200px] text-xs text-slate-400">
             Töltsd fel a szállásfoglalást, repjegyet vagy biztosítást.
           </p>
         </div>
@@ -127,8 +137,6 @@ export default function DocumentsSection({
                 file={file}
                 canManage={canManage}
                 onPreviewClick={() => openInDrive(file)}
-                // JAVÍTÁS: KIVETTÜK az onOpen={...} propot
-                // így a menüben NEM jelenik meg a "Megnyitás Drive-ban"
                 onRename={() => handleRenameFile(file)}
                 onDelete={() =>
                   handleDeleteFile(file.id, "document", file.drive_file_id)

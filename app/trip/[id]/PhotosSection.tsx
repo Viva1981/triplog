@@ -1,70 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
-import { supabase } from "@/lib/supabaseClient";
-
-/**
- * Hook: Nagy felbontású kép betöltése Lightboxhoz (Privát Drive fájl)
- */
-function useLightboxImage(file: TripFile | null) {
-  const [src, setSrc] = useState<string | null>(null);
-  const urlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    async function load() {
-      if (!file?.drive_file_id) {
-        setSrc(null);
-        return;
-      }
-      
-      // Reset
-      setSrc(null);
-
-      try {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.provider_token;
-
-        if (!token) return;
-
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        if (!res.ok) throw new Error("Lightbox load error");
-
-        const blob = await res.blob();
-        if (!active) return;
-
-        const objUrl = URL.createObjectURL(blob);
-        
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        urlRef.current = objUrl;
-        
-        setSrc(objUrl);
-
-      } catch (err) {
-        console.error("Lightbox hiba:", err);
-      }
-    }
-
-    load();
-
-    return () => {
-      active = false;
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    };
-  }, [file?.drive_file_id]);
-
-  return src;
-}
 
 type PhotosSectionProps = {
   photoFiles: TripFile[];
@@ -154,32 +93,31 @@ export default function PhotosSection({
 
   const handleImageTap = () => {
     const now = Date.now();
+
     if (lastTap && now - lastTap < 300) {
       const nextZoom = !isZoomed;
       setIsZoomed(nextZoom);
       if (!nextZoom) resetPosition();
     }
+
     setLastTap(now);
   };
 
   const current = lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
-  // Itt hívjuk a privát betöltőt
-  const lightboxSrc = useLightboxImage(current);
+  const lightboxSrc = current?.preview_link || current?.thumbnail_link || null;
 
   return (
     <>
       <section className="rounded-3xl bg-white p-4 shadow-sm md:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              Fotók
-            </h2>
+            <h2 className="text-base font-semibold text-slate-900">Fotók</h2>
             <p className="text-xs text-slate-500">
-              A képek privát Drive mappába kerülnek.
+              A képek az utazás Drive mappájába kerülnek.
             </p>
           </div>
 
-          <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-600">
+          <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-[#16ba53] px-4 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90">
             <input
               type="file"
               accept="image/*"
@@ -218,23 +156,25 @@ export default function PhotosSection({
         )}
       </section>
 
-      {/* LIGHTBOX */}
+      {/* LIGHTBOX OVERLAY */}
       {current && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 backdrop-blur-sm px-3">
-          <button onClick={closeLightbox} className="absolute inset-0 cursor-default" />
+          <button
+            onClick={closeLightbox}
+            className="absolute inset-0 cursor-default"
+          />
 
-          <div className="relative z-50 w-full max-w-5xl h-full flex flex-col justify-center pointer-events-none">
-            <div className="relative flex items-center justify-between w-full h-full pointer-events-auto">
-              
+          <div className="pointer-events-none relative z-50 flex h-full w-full max-w-5xl flex-col justify-center">
+            <div className="pointer-events-auto relative flex h-full w-full items-center justify-between">
               <button
                 onClick={showPrev}
-                className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 backdrop-blur-md transition mx-4"
+                className="mx-4 hidden h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition backdrop-blur-md hover:bg-white/20 md:flex"
               >
                 ◀
               </button>
 
               <motion.div
-                className="relative flex flex-1 items-center justify-center h-full overflow-hidden"
+                className="relative flex h-full flex-1 items-center justify-center overflow-hidden"
                 drag={isZoomed ? false : "x"}
                 dragConstraints={{ left: 0, right: 0 }}
                 dragElastic={0.2}
@@ -245,8 +185,12 @@ export default function PhotosSection({
                     key={current.id}
                     src={lightboxSrc}
                     alt={current.name}
-                    className="max-h-[85vh] max-w-full object-contain rounded-sm shadow-2xl"
-                    style={{ scale: isZoomed ? 2 : 1, cursor: isZoomed ? "zoom-out" : "zoom-in" }}
+                    referrerPolicy="no-referrer"
+                    className="max-h-[85vh] max-w-full rounded-sm object-contain shadow-2xl"
+                    style={{
+                      scale: isZoomed ? 2 : 1,
+                      cursor: isZoomed ? "zoom-out" : "zoom-in",
+                    }}
                     animate={controls}
                     drag={isZoomed}
                     dragConstraints={
@@ -258,34 +202,34 @@ export default function PhotosSection({
                     onClick={handleImageTap}
                   />
                 ) : (
-                  <div className="text-white text-sm animate-pulse">
-                    Kép betöltése privát mappából...
+                  <div className="text-sm text-white">
+                    Nincs elérhető előnézet
                   </div>
                 )}
               </motion.div>
 
               <button
                 onClick={showNext}
-                className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 backdrop-blur-md transition mx-4"
+                className="mx-4 hidden h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition backdrop-blur-md hover:bg-white/20 md:flex"
               >
                 ▶
               </button>
             </div>
 
             {!isZoomed && (
-              <div className="absolute bottom-4 left-0 right-0 flex justify-between px-6 text-xs text-white/80 pointer-events-none">
+              <div className="pointer-events-none absolute bottom-4 left-0 right-0 flex justify-between px-6 text-xs text-white/80">
                 <span className="truncate pr-4">{current.name}</span>
                 <span className="whitespace-nowrap">
                   {lightboxIndex! + 1} / {photoFiles.length}
                 </span>
               </div>
             )}
-            
-            <button 
-                onClick={closeLightbox}
-                className="absolute top-4 right-4 z-50 p-2 text-white/70 hover:text-white pointer-events-auto bg-black/20 rounded-full md:bg-transparent"
+
+            <button
+              onClick={closeLightbox}
+              className="pointer-events-auto absolute right-4 top-4 z-50 rounded-full bg-black/20 p-2 text-white/70 hover:text-white md:bg-transparent"
             >
-                ✕
+              ✕
             </button>
           </div>
         </div>
