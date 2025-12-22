@@ -10,7 +10,6 @@ const Icons = {
   Back: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>,
   Map: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>,
   Users: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
-  Mail: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
   Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
   X: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
   Logout: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>,
@@ -25,7 +24,8 @@ type ProfileInfo = {
 };
 
 type PendingInvite = {
-  id: string; // member id
+  id: string; // invite id (NEM member id)
+  trip_id: string;
   trip: {
     title: string;
     destination: string | null;
@@ -77,34 +77,39 @@ export default function ProfilePage() {
       .eq("role", "member")
       .eq("status", "accepted");
 
-    // 3. Függő meghívások (TRIP_MEMBERS tábla alapján!)
-    // Ha a trip_invites-ben van, de a trip_members-ben nincs, itt NEM látszik.
-    const { data: pendingData } = await supabase
-      .from("trip_members")
-      .select(`
-        id,
-        trip:trips (
-          title,
-          destination
-        )
-      `)
-      .eq("user_id", user.id)
-      .eq("status", "pending");
+    // 3. Függő meghívások - JAVÍTVA: TRIP_INVITES TÁBLÁBÓL!
+    // Megkeressük azokat a meghívókat, amik erre az e-mailre szólnak
+    if (user.email) {
+      const { data: pendingData } = await supabase
+        .from("trip_invites")
+        .select(`
+          id,
+          trip_id,
+          trip:trips (
+            title,
+            destination
+          )
+        `)
+        .eq("invited_email", user.email) // Itt az e-mail alapján keresünk
+        .eq("status", "pending");
 
-    setOwnedCount(owned || 0);
-    setSharedCount(shared || 0);
-    
-    if (pendingData) {
-      const mappedInvites = pendingData.map((item: any) => ({
-        id: item.id,
-        trip: {
-          title: item.trip?.title ?? "Névtelen utazás",
-          destination: item.trip?.destination
-        }
-      }));
-      setInvites(mappedInvites);
+      setOwnedCount(owned || 0);
+      setSharedCount(shared || 0);
+      
+      if (pendingData) {
+        const mappedInvites = pendingData.map((item: any) => ({
+          id: item.id,
+          trip_id: item.trip_id,
+          trip: {
+            title: item.trip?.title ?? "Névtelen utazás",
+            destination: item.trip?.destination
+          }
+        }));
+        setInvites(mappedInvites);
+      }
+    } else {
+        setLoading(false);
     }
-
     setLoading(false);
   };
 
@@ -112,13 +117,43 @@ export default function ProfilePage() {
     loadData();
   }, [router]);
 
-  const handleAcceptInvite = async (memberId: string) => {
-    await supabase.from("trip_members").update({ status: "accepted" }).eq("id", memberId);
+  // JAVÍTVA: Elfogadáskor létrehozzuk a TAGSÁGOT is
+  const handleAcceptInvite = async (inviteId: string, tripId: string) => {
+    if (!profile) return;
+
+    // 1. Tag létrehozása
+    const { error: insertError } = await supabase.from("trip_members").insert({
+        trip_id: tripId,
+        user_id: profile.id,
+        role: "member",
+        status: "accepted",
+        display_name: profile.name,
+        email: profile.email
+    });
+
+    // Ha már tag (23505 hiba), azt nem vesszük hibának
+    if (insertError && insertError.code !== '23505') {
+        console.error("Hiba a csatlakozáskor:", insertError);
+        alert("Nem sikerült csatlakozni. Próbáld újra.");
+        return;
+    }
+
+    // 2. Meghívó lezárása
+    await supabase
+      .from("trip_invites")
+      .update({ status: "accepted" })
+      .eq("id", inviteId);
+    
     loadData();
   };
 
-  const handleDeclineInvite = async (memberId: string) => {
-    await supabase.from("trip_members").delete().eq("id", memberId);
+  // Elutasításkor csak a meghívót állítjuk át (vagy töröljük)
+  const handleDeclineInvite = async (inviteId: string) => {
+    await supabase
+      .from("trip_invites")
+      .delete() // Vagy .update({ status: 'cancelled' })
+      .eq("id", inviteId);
+    
     loadData();
   };
 
@@ -141,7 +176,7 @@ export default function ProfilePage() {
     <main className="min-h-screen bg-slate-50 pb-20">
       <div className="max-w-2xl mx-auto px-4 py-8">
         
-        {/* Vissza gomb - ÚJ */}
+        {/* Vissza gomb */}
         <div className="mb-6">
           <Link href="/" className="inline-flex items-center text-xs text-slate-500 hover:text-slate-800 transition">
             <Icons.Back /> <span className="ml-1">Vissza a főoldalra</span>
@@ -193,7 +228,7 @@ export default function ProfilePage() {
                   </div>
                   <div className="flex gap-2">
                     <button 
-                      onClick={() => handleAcceptInvite(invite.id)}
+                      onClick={() => handleAcceptInvite(invite.id, invite.trip_id)}
                       className="flex-1 sm:flex-none inline-flex items-center justify-center px-4 py-2 rounded-xl bg-[#16ba53] text-white text-xs font-bold hover:opacity-90 shadow-sm"
                     >
                       <Icons.Check /> <span className="ml-1">Elfogadás</span>
