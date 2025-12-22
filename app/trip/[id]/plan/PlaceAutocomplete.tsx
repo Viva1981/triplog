@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 
-// A te API-d válaszstruktúrája (Google Places v1)
 type Suggestion = {
   placePrediction: {
     placeId: string;
@@ -18,15 +17,14 @@ type Suggestion = {
 
 type PlaceAutocompleteProps = {
   value: string;
-  onChange: (value: string) => void;
+  // MÓDOSÍTÁS: Mostantól nem csak stringet, hanem placeId-t is átadhatunk
+  onChange: (value: string, placeId?: string) => void;
 };
 
 export default function PlaceAutocomplete({ value, onChange }: PlaceAutocompleteProps) {
   const [inputValue, setInputValue] = useState(value);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
-  
-  // Session token a Google API költségek optimalizálására
   const [sessionToken, setSessionToken] = useState("");
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -35,16 +33,13 @@ export default function PlaceAutocomplete({ value, onChange }: PlaceAutocomplete
   }, [value]);
 
   useEffect(() => {
-    // Generálunk egy session tokent betöltéskor (modern böngészőkben beépített)
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         setSessionToken(crypto.randomUUID());
     } else {
-        // Fallback régebbi böngészőkhöz
         setSessionToken(Math.random().toString(36).substring(2));
     }
   }, []);
 
-  // Klikk esemény kezelése (bezárás, ha mellékattintasz)
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
@@ -58,11 +53,11 @@ export default function PlaceAutocomplete({ value, onChange }: PlaceAutocomplete
   const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setInputValue(val);
-    onChange(val);
+    // Ha a user kézzel ír, töröljük a placeId-t, mert az nem valid Google hely
+    onChange(val, undefined);
 
     if (val.length > 2) {
       try {
-        // type=all paramétert küldünk!
         const res = await fetch(`/api/autocomplete?input=${encodeURIComponent(val)}&session=${sessionToken}&type=all`);
         const data = await res.json();
         
@@ -82,18 +77,17 @@ export default function PlaceAutocomplete({ value, onChange }: PlaceAutocomplete
   };
 
   const handleSelect = (suggestion: Suggestion) => {
-    // A teljes név (pl. "VakVarjú Étterem, Budapest, Paulay Ede utca")
     const fullText = suggestion.placePrediction.text.text;
+    const placeId = suggestion.placePrediction.placeId;
     
     setInputValue(fullText);
-    onChange(fullText);
+    // VISSZAADJUK A PLACE_ID-t IS!
+    onChange(fullText, placeId);
+    
     setShowDropdown(false);
     
-    // Új session token a következő kereséshez
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         setSessionToken(crypto.randomUUID());
-    } else {
-        setSessionToken(Math.random().toString(36).substring(2));
     }
   };
 
