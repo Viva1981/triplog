@@ -9,37 +9,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
   }
 
-  // JAVÍTÁS: A mezőket (location) és a kulcsot Header-ben küldjük.
-  // Ez a "Places API (New)" hivatalos, ajánlott módja.
-  const url = `https://places.googleapis.com/v1/places/${placeId}`;
+  // VISSZA A KLASSZIKUSHOZ: Ez a legstabilabb végpont
+  // Nem kell header, csak sima URL paraméterek
+  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry&key=${apiKey}`;
 
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'location', // Itt kérjük le a koordinátát
-        'Accept-Language': 'hu',
-      },
-    });
-
+    const res = await fetch(url);
     const data = await res.json();
 
-    // Debugoláshoz: Ha hiba van, látni fogjuk a Vercel logokban
-    if (!res.ok) {
-      console.error("GOOGLE API ERROR:", data);
-      return NextResponse.json({ error: data.error?.message || 'Google API Error' }, { status: res.status });
-    }
-
-    if (data.location) {
+    // A klasszikus API válasza: result.geometry.location
+    if (data.status === 'OK' && data.result?.geometry?.location) {
       return NextResponse.json({ 
-        lat: data.location.latitude,
-        lng: data.location.longitude 
+        lat: data.result.geometry.location.lat,
+        lng: data.result.geometry.location.lng 
       });
     } else {
-      console.error("NO LOCATION IN DATA:", data);
-      return NextResponse.json({ error: 'Location not found in response' }, { status: 404 });
+      console.error("GOOGLE API ERROR:", data.status, data.error_message);
+      return NextResponse.json({ error: data.error_message || 'Place not found' }, { status: 404 });
     }
 
   } catch (error) {
