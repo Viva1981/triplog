@@ -5,90 +5,64 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 
-type User = {
-  id: string;
-  email?: string;
-};
-
-type Trip = {
-  id: string;
-  title: string;
-  destination: string | null;
-  date_from: string | null;
-  date_to: string | null;
-  owner_id: string;
-};
-
-type Membership = {
-  trip_id: string;
-  role: "owner" | "member";
-};
-
+// ... (A típusdefiníciók maradnak ugyanazok) ...
+type User = { id: string; email?: string; };
+type Trip = { id: string; title: string; destination: string | null; date_from: string | null; date_to: string | null; owner_id: string; };
+type Membership = { trip_id: string; role: "owner" | "member"; };
 type TripWithRole = Trip & { memberRole: "owner" | "member" };
 
-// --- SEGÉDFÜGGVÉNYEK ---
-
-// Státusz kiszámítása dátum alapján (Emoji nélkül!)
+// --- SEGÉDFÜGGVÉNYEK (Maradnak) ---
+// ... (Státusz, színátmenet logika marad) ...
 function getTripStatus(dateFrom: string | null, dateTo: string | null) {
   if (!dateFrom) return { label: "Tervezés alatt", color: "bg-slate-100 text-slate-600 border-slate-200" };
-  
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  
+  const now = new Date(); now.setHours(0, 0, 0, 0);
   const start = new Date(dateFrom);
   const end = dateTo ? new Date(dateTo) : new Date(dateFrom);
-
-  if (now > end) {
-    return { label: "Véget ért", color: "bg-slate-100 text-slate-500 border-slate-200" };
-  }
-  if (now >= start && now <= end) {
-    return { label: "Zajlik éppen", color: "bg-emerald-50 text-[#16ba53] border-emerald-100 font-bold" };
-  }
-  
+  if (now > end) return { label: "Véget ért", color: "bg-slate-100 text-slate-500 border-slate-200" };
+  if (now >= start && now <= end) return { label: "Zajlik éppen", color: "bg-emerald-50 text-[#16ba53] border-emerald-100 font-bold" };
   const diffTime = Math.abs(start.getTime() - now.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-  
   return { label: `${diffDays} nap múlva`, color: "bg-blue-50 text-blue-600 border-blue-100" };
 }
 
-// --- IKONOK (SVG) ---
-// Letisztult, vékony vonalas ikonok
+// --- IKONOK (Maradnak) ---
 const Icons = {
-  Search: () => (
-    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-  ),
-  Pin: () => (
-    <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-  ),
-  Calendar: () => (
-    <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-  ),
-  ArrowRight: () => (
-    <svg className="w-3 h-3 text-slate-300 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-  ),
-  Plane: () => (
-    <svg className="w-5 h-5 text-[#16ba53]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
-  ),
-  Plus: () => (
-    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-  )
+  Search: () => (<svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>),
+  Pin: () => (<svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>),
+  Calendar: () => (<svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>),
+  ArrowRight: () => (<svg className="w-3 h-3 text-slate-300 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>),
+  Plane: () => (<svg className="w-5 h-5 text-[#16ba53]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>),
+  Plus: () => (<svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>)
 };
 
 // --- NAVBAR ---
 const AppNavbar = ({ user }: { user: User | null }) => {
   const router = useRouter();
+  const [hasNotification, setHasNotification] = useState(false);
+
+  // Értesítések figyelése (piros pötty)
+  useEffect(() => {
+    const checkInvites = async () => {
+      if (!user?.email) return;
+      const { count } = await supabase
+        .from("trip_invites")
+        .select("*", { count: 'exact', head: true })
+        .eq("invited_email", user.email)
+        .eq("status", "pending");
+      
+      setHasNotification((count || 0) > 0);
+    };
+    
+    if (user) checkInvites();
+  }, [user]);
 
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        scopes:
-          "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email",
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
+        scopes: "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email",
+        queryParams: { access_type: "offline", prompt: "consent" },
       },
     });
   };
@@ -101,20 +75,27 @@ const AppNavbar = ({ user }: { user: User | null }) => {
   return (
     <nav className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between shadow-sm sticky top-0 z-30">
       <Link href="/" className="flex items-center gap-2">
-        <div className="w-8 h-8 bg-[#16ba53] rounded-full flex items-center justify-center text-white font-bold text-xl">
-          T
-        </div>
+        <div className="w-8 h-8 bg-[#16ba53] rounded-full flex items-center justify-center text-white font-bold text-xl">T</div>
         <span className="text-xl font-bold text-slate-800 hidden sm:block">TripLog</span>
       </Link>
       
       {user ? (
         <div className="flex items-center gap-2">
           <Link href="/new-trip" className="flex items-center bg-[#16ba53] hover:bg-[#139a45] text-white px-4 py-2 rounded-full text-sm font-semibold transition shadow-sm hover:shadow active:scale-95">
-            <Icons.Plus /> Új utazás
+            <Icons.Plus /> <span className="hidden sm:inline">Új utazás</span><span className="sm:hidden">Új</span>
           </Link>
-          <Link href="/profile" className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold transition">
+          
+          {/* PROFIL GOMB ÉRTESÍTÉSSEL */}
+          <Link href="/profile" className="relative bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold transition">
             Profil
+            {hasNotification && (
+                <span className="absolute top-0 right-0 -mt-1 -mr-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
+            )}
           </Link>
+          
           <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-slate-800 px-3 py-2">
             Kijelentkezés
           </button>
@@ -246,7 +227,6 @@ export default function HomePage() {
                 Tervezz, fotózz, mentsd a dokumentumokat és kövesd a költségeket.
                 A TripLog mindent automatikusan a <strong>saját Google Drive-odba</strong> rendszerez.
               </p>
-              {/* Emojik törölve, itt is egyszerűsítettünk */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
                  <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex-1">
                     <h3 className="font-bold text-slate-800 mb-1">Galéria</h3>
@@ -302,7 +282,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* SZŰRŐ SÁV (Clean SVG icons) */}
+        {/* SZŰRŐ SÁV */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
           <div className="flex flex-col md:flex-row gap-3">
             <div className="flex-1">
@@ -387,7 +367,6 @@ export default function HomePage() {
                   href={`/trip/${trip.id}`}
                   className="group block bg-white rounded-2xl shadow-sm border border-slate-100 hover:shadow-lg hover:border-slate-200 transition-all duration-300 overflow-hidden flex flex-col h-full"
                 >
-                  {/* Kártya fejléce: Monokróm zöld átmenet + SVG ikon */}
                   <div className="h-24 bg-gradient-to-br from-[#16ba53] to-[#139a45] relative">
                     <div className="absolute bottom-[-16px] left-5">
                        <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center border border-slate-50">
