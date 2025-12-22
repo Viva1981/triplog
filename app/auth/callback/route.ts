@@ -5,13 +5,12 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  // A "next" paraméter megadja, hova irányítsunk login után (alapból a főoldalra)
   const next = searchParams.get('next') ?? '/'
 
   if (code) {
-    const cookieStore = cookies()
+    // JAVÍTÁS: Next.js 15-ben a cookies() aszinkron, ezért kell az 'await'
+    const cookieStore = await cookies()
     
-    // Szerver oldali Supabase kliens létrehozása a token beváltásához
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -30,15 +29,13 @@ export async function GET(request: Request) {
       }
     )
     
-    // A Google-től kapott kód beváltása session-re
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      // Ha sikerült, visszairányítunk az oldalra (már bejelentkezve)
       return NextResponse.redirect(`${origin}${next}`)
     }
   }
 
-  // Ha hiba volt, vagy nem volt kód, visszadobjuk a főoldalra (esetleg hibaüzenettel)
+  // Hiba esetén visszairányítás
   return NextResponse.redirect(`${origin}/auth/auth-code-error`)
 }
