@@ -213,7 +213,6 @@ export default function TripPlanPage() {
     }
   };
 
-  // Navigáció indítása
   const openNavigation = (location: string) => {
     if (!location) return;
     const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
@@ -332,7 +331,6 @@ export default function TripPlanPage() {
                   <div key={activity.id} className="relative pl-6">
                     <div className="absolute -left-[9px] top-4 w-4 h-4 rounded-full border-2 border-white bg-[#16ba53] shadow-sm"></div>
                     
-                    {/* KATTINTHATÓ KÁRTYA (EDIT) */}
                     <div 
                       onClick={() => openModal(activity)}
                       className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition group cursor-pointer"
@@ -361,11 +359,10 @@ export default function TripPlanPage() {
                              <TypeIcon />
                            </div>
                            
-                           {/* NAVIGÁCIÓ GOMB */}
                            {activity.location_name && (
                              <button
                                onClick={(e) => {
-                                 e.stopPropagation(); // Ne nyissa meg a szerkesztőt
+                                 e.stopPropagation();
                                  openNavigation(activity.location_name!);
                                }}
                                className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition"
@@ -428,13 +425,15 @@ export default function TripPlanPage() {
                   />
                 </div>
 
-                {/* Dátum és Idő (Mindig látható szerkesztéskor) */}
                 <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dátum</label>
                     <input 
                       type="date" 
                       value={formDate}
+                      // JAVÍTÁS: Dátum korlátozása az utazás időtartamára
+                      min={trip.date_from?.split('T')[0]}
+                      max={trip.date_to?.split('T')[0]}
                       onChange={e => setFormDate(e.target.value)}
                       className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
                     />
