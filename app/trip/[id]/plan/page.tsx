@@ -6,14 +6,12 @@ import Link from "next/link";
 import { supabase } from "../../../../lib/supabaseClient";
 import type { Trip, TripActivity, ActivityType } from "../../../../lib/trip/types";
 import PlaceAutocomplete from "./PlaceAutocomplete";
-import TripMap from "./TripMap";
 
 // --- SVG IKONOK ---
 const PlanIcons = {
   Back: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>,
   Calendar: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
   Bucket: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>,
-  Map: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>,
   Plus: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
   Clock: () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   MapPin: () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
@@ -32,7 +30,9 @@ function getDatesInRange(startDate: string, endDate: string) {
   const dates = [];
   const start = new Date(startDate);
   const end = new Date(endDate);
+  
   if(isNaN(start.getTime()) || isNaN(end.getTime())) return [];
+
   const current = new Date(start);
   while (current <= end) {
     dates.push(new Date(current).toISOString().split('T')[0]);
@@ -56,18 +56,19 @@ export default function TripPlanPage() {
   const [user, setUser] = useState<any>(null);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"days" | "bucket" | "map">("days");
+  const [viewMode, setViewMode] = useState<"days" | "bucket">("days"); // MAP MÓD KIVÉVE
   
+  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
+  // Form State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formTitle, setFormTitle] = useState("");
   const [formLocation, setFormLocation] = useState("");
-  const [formPlaceId, setFormPlaceId] = useState<string | undefined>(undefined);
   const [formType, setFormType] = useState<ActivityType>("program");
-  const [formDate, setFormDate] = useState("");
-  const [formTime, setFormTime] = useState("");
+  const [formDate, setFormDate] = useState(""); 
+  const [formTime, setFormTime] = useState(""); 
 
   useEffect(() => {
     const init = async () => {
@@ -116,10 +117,8 @@ export default function TripPlanPage() {
     if (viewMode === "bucket") {
       return activities.filter(a => !a.start_time);
     }
-    if (viewMode === "days" || viewMode === "map") {
-      if (selectedDate) {
-        return activities.filter(a => a.start_time && a.start_time.startsWith(selectedDate));
-      }
+    if (selectedDate) {
+      return activities.filter(a => a.start_time && a.start_time.startsWith(selectedDate));
     }
     return [];
   }, [activities, viewMode, selectedDate]);
@@ -129,7 +128,6 @@ export default function TripPlanPage() {
       setEditingId(activity.id);
       setFormTitle(activity.title);
       setFormLocation(activity.location_name || "");
-      setFormPlaceId(undefined);
       setFormType(activity.type);
       
       if (activity.start_time) {
@@ -144,7 +142,6 @@ export default function TripPlanPage() {
       setEditingId(null);
       setFormTitle("");
       setFormLocation("");
-      setFormPlaceId(undefined);
       setFormType("program");
       if (viewMode !== "bucket" && selectedDate) {
         setFormDate(selectedDate);
@@ -168,29 +165,6 @@ export default function TripPlanPage() {
         finalStartTime = `${formDate}T${time}:00`;
     }
 
-    // KOORDINÁTA LEKÉRÉS JAVÍTVA
-    let lat = null;
-    let lng = null;
-
-    if (formPlaceId) {
-        console.log("Fetching coords for Place ID:", formPlaceId);
-        try {
-            const res = await fetch(`/api/places/details?placeId=${formPlaceId}`);
-            if (res.ok) {
-                const data = await res.json();
-                console.log("Coords received:", data);
-                if (data.lat && data.lng) {
-                    lat = data.lat;
-                    lng = data.lng;
-                }
-            } else {
-                console.error("API Error:", await res.text());
-            }
-        } catch (err) {
-            console.error("Coords fetch exception", err);
-        }
-    }
-
     const payload: any = {
       title: formTitle,
       location_name: formLocation,
@@ -198,11 +172,7 @@ export default function TripPlanPage() {
       start_time: finalStartTime,
     };
 
-    // Ha van új koordináta, mentsük el
-    if (lat && lng) {
-        payload.location_lat = lat;
-        payload.location_lng = lng;
-    }
+    // KOORDINÁTA LEKÉRÉS KIVÉVE - csak a nevet mentjük, az stabil
 
     let error;
     if (editingId) {
@@ -221,8 +191,6 @@ export default function TripPlanPage() {
     if (!error) {
       await fetchActivities(trip.id);
       setIsModalOpen(false);
-    } else {
-        console.error("Supabase Save Error:", error);
     }
     setSubmitting(false);
   };
@@ -239,6 +207,7 @@ export default function TripPlanPage() {
     }
   };
 
+  // Ez a navigáció továbbra is működik, mert a szöveges címre keres!
   const openNavigation = (location: string) => {
     if (!location) return;
     const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
@@ -287,7 +256,7 @@ export default function TripPlanPage() {
           <Link href={`/trip/${trip.id}`} className="inline-flex items-center text-xs text-slate-500 hover:text-slate-800 mb-2 transition">
             <PlanIcons.Back /> <span className="ml-1">Vissza</span>
           </Link>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-slate-900">TripTerv</h1>
             <div className="flex bg-white rounded-lg p-1 shadow-sm border border-slate-100">
               <button 
@@ -297,23 +266,17 @@ export default function TripPlanPage() {
                 Napi bontás
               </button>
               <button 
-                onClick={() => setViewMode("map")}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1 ${viewMode === "map" ? "bg-[#16ba53] text-white" : "text-slate-500 hover:bg-slate-50"}`}
-              >
-                <PlanIcons.Map /> Térkép
-              </button>
-              <button 
                 onClick={() => setViewMode("bucket")}
                 className={`px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1 ${viewMode === "bucket" ? "bg-[#16ba53] text-white" : "text-slate-500 hover:bg-slate-50"}`}
               >
-                <PlanIcons.Bucket />
+                <PlanIcons.Bucket /> Bakancslista
               </button>
             </div>
           </div>
         </div>
 
         {/* NAPI VÁLASZTÓ */}
-        {tripDates.length > 0 && viewMode !== "bucket" && (
+        {viewMode === "days" && tripDates.length > 0 && (
           <div className="flex overflow-x-auto gap-2 mb-6 pb-2 scrollbar-hide -mx-4 px-4">
             {tripDates.map(date => {
               const isActive = selectedDate === date;
@@ -339,85 +302,79 @@ export default function TripPlanPage() {
           </div>
         )}
 
-        {/* --- TARTALOM VÁLTÁSA --- */}
-        
-        {viewMode === "map" ? (
-            <TripMap activities={currentActivities} />
-        ) : (
-            // LISTA NÉZET
-            <div className="space-y-4">
-            {currentActivities.length === 0 ? (
-                <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl">
-                <div className="inline-block p-3 rounded-full bg-slate-50 text-slate-300 mb-2">
-                    <PlanIcons.Calendar />
-                </div>
-                <p className="text-sm text-slate-500 font-medium">Még nincs program.</p>
-                <p className="text-xs text-slate-400">Tervezz valami izgalmasat!</p>
-                </div>
-            ) : (
-                <div className="relative border-l-2 border-slate-200 ml-4 space-y-4 pb-4">
-                {currentActivities.map((activity, idx) => {
-                    const TypeIcon = 
-                    activity.type === 'food' ? PlanIcons.TypeFood :
-                    activity.type === 'travel' ? PlanIcons.TypeTravel :
-                    activity.type === 'accommodation' ? PlanIcons.TypeAccommodation :
-                    activity.type === 'other' ? PlanIcons.TypeOther : 
-                    PlanIcons.TypeProgram;
-
-                    return (
-                    <div key={activity.id} className="relative pl-6">
-                        <div className="absolute -left-[9px] top-4 w-4 h-4 rounded-full border-2 border-white bg-[#16ba53] shadow-sm"></div>
-                        
-                        <div 
-                        onClick={() => openModal(activity)}
-                        className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition group cursor-pointer"
-                        >
-                        <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                            {activity.start_time && (
-                                <div className="flex items-center gap-1.5 text-xs font-bold text-[#16ba53] mb-1">
-                                <PlanIcons.Clock />
-                                {formatTime(activity.start_time)}
-                                </div>
-                            )}
-                            
-                            <h3 className="text-base font-bold text-slate-800 mb-1">{activity.title}</h3>
-                            
-                            {activity.location_name && (
-                                <div className="flex items-start gap-1 text-xs text-slate-500">
-                                <div className="mt-0.5"><PlanIcons.MapPin /></div>
-                                <span>{activity.location_name}</span>
-                                </div>
-                            )}
-                            </div>
-
-                            <div className="flex flex-col items-end gap-2">
-                            <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-[#16ba53] group-hover:bg-emerald-50 transition">
-                                <TypeIcon />
-                            </div>
-                            
-                            {activity.location_name && (
-                                <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    openNavigation(activity.location_name!);
-                                }}
-                                className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition"
-                                title="Navigáció indítása"
-                                >
-                                <PlanIcons.ExternalLink />
-                                </button>
-                            )}
-                            </div>
-                        </div>
-                        </div>
-                    </div>
-                    );
-                })}
-                </div>
-            )}
+        {/* IDŐVONAL */}
+        <div className="space-y-4">
+          {currentActivities.length === 0 ? (
+            <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl">
+              <div className="inline-block p-3 rounded-full bg-slate-50 text-slate-300 mb-2">
+                <PlanIcons.Calendar />
+              </div>
+              <p className="text-sm text-slate-500 font-medium">Még nincs program.</p>
+              <p className="text-xs text-slate-400">Tervezz valami izgalmasat!</p>
             </div>
-        )}
+          ) : (
+            <div className="relative border-l-2 border-slate-200 ml-4 space-y-4 pb-4">
+              {currentActivities.map((activity, idx) => {
+                const TypeIcon = 
+                  activity.type === 'food' ? PlanIcons.TypeFood :
+                  activity.type === 'travel' ? PlanIcons.TypeTravel :
+                  activity.type === 'accommodation' ? PlanIcons.TypeAccommodation :
+                  activity.type === 'other' ? PlanIcons.TypeOther : 
+                  PlanIcons.TypeProgram;
+
+                return (
+                  <div key={activity.id} className="relative pl-6">
+                    <div className="absolute -left-[9px] top-4 w-4 h-4 rounded-full border-2 border-white bg-[#16ba53] shadow-sm"></div>
+                    
+                    <div 
+                      onClick={() => openModal(activity)}
+                      className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition group cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          {activity.start_time && (
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-[#16ba53] mb-1">
+                              <PlanIcons.Clock />
+                              {formatTime(activity.start_time)}
+                            </div>
+                          )}
+                          
+                          <h3 className="text-base font-bold text-slate-800 mb-1">{activity.title}</h3>
+                          
+                          {activity.location_name && (
+                            <div className="flex items-start gap-1 text-xs text-slate-500">
+                              <div className="mt-0.5"><PlanIcons.MapPin /></div>
+                              <span>{activity.location_name}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col items-end gap-2">
+                           <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-[#16ba53] group-hover:bg-emerald-50 transition">
+                             <TypeIcon />
+                           </div>
+                           
+                           {activity.location_name && (
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 openNavigation(activity.location_name!);
+                               }}
+                               className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition"
+                               title="Navigáció indítása"
+                             >
+                               <PlanIcons.ExternalLink />
+                             </button>
+                           )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* FAB */}
         <button
@@ -457,9 +414,10 @@ export default function TripPlanPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Helyszín</label>
+                  {/* placeId elkapást kivettük, csak a stringet mentjük */}
                   <PlaceAutocomplete 
                     value={formLocation} 
-                    onChange={(val, pid) => { setFormLocation(val); setFormPlaceId(pid); }} 
+                    onChange={(val) => setFormLocation(val)} 
                   />
                 </div>
 
