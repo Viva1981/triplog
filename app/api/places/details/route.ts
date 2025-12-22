@@ -9,22 +9,26 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
   }
 
-  // Google Places Details API - Csak a geometriát kérjük (spórolunk az adattal)
-  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry&key=${apiKey}`;
+  // JAVÍTÁS: Átállás a Google Places API (New) V1-re
+  // Ez a modern végpont, ami biztosan kompatibilis a keresővel
+  const url = `https://places.googleapis.com/v1/places/${placeId}?fields=location&key=${apiKey}&languageCode=hu`;
 
   try {
     const res = await fetch(url);
     const data = await res.json();
 
-    if (data.status === 'OK' && data.result.geometry) {
+    // A V1 API válasza kicsit más: location: { latitude, longitude }
+    if (data.location) {
       return NextResponse.json({ 
-        lat: data.result.geometry.location.lat,
-        lng: data.result.geometry.location.lng 
+        lat: data.location.latitude,
+        lng: data.location.longitude 
       });
     } else {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      console.error("Google API Error:", data);
+      return NextResponse.json({ error: 'Not found or API error' }, { status: 404 });
     }
   } catch (error) {
+    console.error("Server Fetch Error:", error);
     return NextResponse.json({ error: 'Fetch failed' }, { status: 500 });
   }
 }

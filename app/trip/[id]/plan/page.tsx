@@ -6,20 +6,21 @@ import Link from "next/link";
 import { supabase } from "../../../../lib/supabaseClient";
 import type { Trip, TripActivity, ActivityType } from "../../../../lib/trip/types";
 import PlaceAutocomplete from "./PlaceAutocomplete";
-import TripMap from "./TripMap"; // <--- ÚJ IMPORT
+import TripMap from "./TripMap";
 
 // --- SVG IKONOK ---
 const PlanIcons = {
   Back: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>,
   Calendar: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
   Bucket: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>,
-  Map: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>, // ÚJ IKON
+  Map: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>,
   Plus: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
   Clock: () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   MapPin: () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
   Trash: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
   ExternalLink: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>,
   
+  // Típus ikonok
   TypeProgram: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 22V12h6v10" /></svg>,
   TypeFood: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 15.546c-.523 0-1.046.151-1.5.454a2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.701 2.701 0 00-1.5-.454M9 6v2m3-2v2m3-2v2M9 3h.01M12 3h.01M15 3h.01M21 21v-7a2 2 0 00-2-2H5a2 2 0 00-2 2v7h18zm-3-9v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2h12z" /></svg>,
   TypeTravel: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" /></svg>,
@@ -55,7 +56,7 @@ export default function TripPlanPage() {
   const [user, setUser] = useState<any>(null);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"days" | "bucket" | "map">("days"); // ÚJ: 'map' mód
+  const [viewMode, setViewMode] = useState<"days" | "bucket" | "map">("days");
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -63,7 +64,7 @@ export default function TripPlanPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formTitle, setFormTitle] = useState("");
   const [formLocation, setFormLocation] = useState("");
-  const [formPlaceId, setFormPlaceId] = useState<string | undefined>(undefined); // ÚJ: PlaceID
+  const [formPlaceId, setFormPlaceId] = useState<string | undefined>(undefined);
   const [formType, setFormType] = useState<ActivityType>("program");
   const [formDate, setFormDate] = useState("");
   const [formTime, setFormTime] = useState("");
@@ -112,8 +113,6 @@ export default function TripPlanPage() {
   }, [trip]);
 
   const currentActivities = useMemo(() => {
-    // Térkép nézetben mindent mutatunk, ami szűrt naphoz tartozik (vagy mindent ha bucket)
-    // De itt inkább a lista logikát hagyjuk meg, a térkép komponens majd szűr magának
     if (viewMode === "bucket") {
       return activities.filter(a => !a.start_time);
     }
@@ -130,7 +129,7 @@ export default function TripPlanPage() {
       setEditingId(activity.id);
       setFormTitle(activity.title);
       setFormLocation(activity.location_name || "");
-      setFormPlaceId(undefined); // Szerkesztésnél nem tudjuk a placeId-t visszanyerni csak ha újra keres
+      setFormPlaceId(undefined);
       setFormType(activity.type);
       
       if (activity.start_time) {
@@ -169,20 +168,26 @@ export default function TripPlanPage() {
         finalStartTime = `${formDate}T${time}:00`;
     }
 
-    // KOORDINÁTA LEKÉRÉS
+    // KOORDINÁTA LEKÉRÉS JAVÍTVA
     let lat = null;
     let lng = null;
 
     if (formPlaceId) {
+        console.log("Fetching coords for Place ID:", formPlaceId);
         try {
             const res = await fetch(`/api/places/details?placeId=${formPlaceId}`);
-            const data = await res.json();
-            if (data.lat && data.lng) {
-                lat = data.lat;
-                lng = data.lng;
+            if (res.ok) {
+                const data = await res.json();
+                console.log("Coords received:", data);
+                if (data.lat && data.lng) {
+                    lat = data.lat;
+                    lng = data.lng;
+                }
+            } else {
+                console.error("API Error:", await res.text());
             }
         } catch (err) {
-            console.error("Coords fetch error", err);
+            console.error("Coords fetch exception", err);
         }
     }
 
@@ -193,7 +198,7 @@ export default function TripPlanPage() {
       start_time: finalStartTime,
     };
 
-    // Csak akkor írjuk felül a koordinátát, ha újat kerestünk
+    // Ha van új koordináta, mentsük el
     if (lat && lng) {
         payload.location_lat = lat;
         payload.location_lng = lng;
@@ -216,6 +221,8 @@ export default function TripPlanPage() {
     if (!error) {
       await fetchActivities(trip.id);
       setIsModalOpen(false);
+    } else {
+        console.error("Supabase Save Error:", error);
     }
     setSubmitting(false);
   };
@@ -337,7 +344,7 @@ export default function TripPlanPage() {
         {viewMode === "map" ? (
             <TripMap activities={currentActivities} />
         ) : (
-            // LISTA NÉZET (Napi vagy Bucket)
+            // LISTA NÉZET
             <div className="space-y-4">
             {currentActivities.length === 0 ? (
                 <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl">
@@ -450,7 +457,6 @@ export default function TripPlanPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Helyszín</label>
-                  {/* HELYSZÍN KERESŐ UPDATE: placeId-t is mentjük */}
                   <PlaceAutocomplete 
                     value={formLocation} 
                     onChange={(val, pid) => { setFormLocation(val); setFormPlaceId(pid); }} 
