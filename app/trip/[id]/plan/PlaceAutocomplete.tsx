@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { v4 as uuidv4 } from "uuid"; // Ha nincs uuid, generálhatunk egyszerű random stringet is
 
 // A te API-d válaszstruktúrája (Google Places v1)
 type Suggestion = {
@@ -28,7 +27,6 @@ export default function PlaceAutocomplete({ value, onChange }: PlaceAutocomplete
   const [showDropdown, setShowDropdown] = useState(false);
   
   // Session token a Google API költségek optimalizálására
-  // Egy keresési folyamat = 1 session
   const [sessionToken, setSessionToken] = useState("");
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -37,8 +35,13 @@ export default function PlaceAutocomplete({ value, onChange }: PlaceAutocomplete
   }, [value]);
 
   useEffect(() => {
-    // Generálunk egy session tokent betöltéskor
-    setSessionToken(crypto.randomUUID());
+    // Generálunk egy session tokent betöltéskor (modern böngészőkben beépített)
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        setSessionToken(crypto.randomUUID());
+    } else {
+        // Fallback régebbi böngészőkhöz
+        setSessionToken(Math.random().toString(36).substring(2));
+    }
   }, []);
 
   // Klikk esemény kezelése (bezárás, ha mellékattintasz)
@@ -59,7 +62,7 @@ export default function PlaceAutocomplete({ value, onChange }: PlaceAutocomplete
 
     if (val.length > 2) {
       try {
-        // ITT A LÉNYEG: type=all paramétert küldünk!
+        // type=all paramétert küldünk!
         const res = await fetch(`/api/autocomplete?input=${encodeURIComponent(val)}&session=${sessionToken}&type=all`);
         const data = await res.json();
         
@@ -87,7 +90,11 @@ export default function PlaceAutocomplete({ value, onChange }: PlaceAutocomplete
     setShowDropdown(false);
     
     // Új session token a következő kereséshez
-    setSessionToken(crypto.randomUUID());
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        setSessionToken(crypto.randomUUID());
+    } else {
+        setSessionToken(Math.random().toString(36).substring(2));
+    }
   };
 
   return (
