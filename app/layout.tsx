@@ -1,19 +1,10 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-// A Header importot töröltük innen!
-
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
-});
+// Helyi fájlok helyett a beépített Google Inter betűtípust használjuk
+// Ez sokkal stabilabb és nem okoz "File not found" hibát
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "TripLog",
@@ -28,10 +19,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="hu">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {/* Itt volt a <Header /> komponens, ezt kitöröltük, hogy ne legyen duplázódás */}
+      <body className={inter.className}>
+        {/* A Header-t innen már kivettük, így nem lesz duplázódás */}
         {children}
       </body>
     </html>
