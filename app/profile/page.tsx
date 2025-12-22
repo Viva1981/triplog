@@ -10,6 +10,7 @@ const Icons = {
   Back: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>,
   Map: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>,
   Users: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+  Mail: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
   Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
   X: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
   Logout: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>,
@@ -34,6 +35,7 @@ type PendingInvite = {
     title: string;
     destination: string | null;
   };
+  inviterName: string | null; // ÚJ MEZŐ: A meghívó neve
 };
 
 export default function ProfilePage() {
@@ -41,18 +43,15 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   
-  // Statisztikák
   const [ownedCount, setOwnedCount] = useState(0);
   const [sharedCount, setSharedCount] = useState(0);
-  const [totalDays, setTotalDays] = useState(0); // ÚJ: Utazással töltött napok
+  const [totalDays, setTotalDays] = useState(0);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
 
-  // Szerkesztés state
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
 
-  // Törlés state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -78,13 +77,11 @@ export default function ProfilePage() {
     });
     setNewName(name || "");
 
-    // 1. Saját utak
     const { data: ownedTrips } = await supabase
       .from("trips")
       .select("date_from, date_to")
       .eq("owner_id", user.id);
     
-    // 2. Közös utak
     const { data: sharedMemberships } = await supabase
       .from("trip_members")
       .select("trip:trips(date_from, date_to)")
@@ -92,7 +89,6 @@ export default function ProfilePage() {
       .eq("role", "member")
       .eq("status", "accepted");
 
-    // Napok számolása
     let days = 0;
     const calculateDays = (d1: string | null, d2: string | null) => {
         if (!d1 || !d2) return 0;
@@ -111,27 +107,42 @@ export default function ProfilePage() {
     setOwnedCount(ownedTrips?.length || 0);
     setSharedCount(sharedMemberships?.length || 0);
 
-    // 3. Függő meghívások
+    // MEGHÍVÁSOK LEKÉRÉSE (BŐVÍTETT)
     if (user.email) {
       const { data: pendingData } = await supabase
         .from("trip_invites")
         .select(`
           id,
           trip_id,
-          trip:trips ( title, destination )
+          trip:trips (
+            title,
+            destination,
+            trip_members (
+              display_name,
+              email,
+              role
+            )
+          )
         `)
         .eq("invited_email", user.email)
         .eq("status", "pending");
       
       if (pendingData) {
-        const mappedInvites = pendingData.map((item: any) => ({
-          id: item.id,
-          trip_id: item.trip_id,
-          trip: {
-            title: item.trip?.title ?? "Névtelen utazás",
-            destination: item.trip?.destination
-          }
-        }));
+        const mappedInvites = pendingData.map((item: any) => {
+          // Megkeressük a tulajdonost a tagok közül
+          const owner = item.trip?.trip_members?.find((m: any) => m.role === 'owner');
+          const inviterName = owner?.display_name || owner?.email || "Ismeretlen";
+
+          return {
+            id: item.id,
+            trip_id: item.trip_id,
+            trip: {
+              title: item.trip?.title ?? "Névtelen utazás",
+              destination: item.trip?.destination
+            },
+            inviterName
+          };
+        });
         setInvites(mappedInvites);
       }
     }
@@ -142,17 +153,12 @@ export default function ProfilePage() {
     loadData();
   }, [router]);
 
-  // --- MŰVELETEK ---
-
   const handleUpdateName = async () => {
     if (!newName.trim()) return;
     setSavingName(true);
-    
-    // Frissítjük a Supabase Auth metaadatot
     const { error } = await supabase.auth.updateUser({
         data: { full_name: newName }
     });
-
     if (!error) {
         setProfile(prev => prev ? ({ ...prev, name: newName }) : null);
         setIsEditingName(false);
@@ -189,19 +195,12 @@ export default function ProfilePage() {
     router.push("/");
   };
 
-  // Fiók adattörlés (Soft delete a user szempontjából)
   const handleDeleteAccount = async () => {
     if (!profile) return;
     setIsDeleting(true);
-
     try {
-        // 1. Töröljük a saját tripjeit (ez kaszkádolva törli a fájlokat, költéseket, tagokat)
         await supabase.from("trips").delete().eq("owner_id", profile.id);
-        
-        // 2. Töröljük a tagságait mások tripjeiben
         await supabase.from("trip_members").delete().eq("user_id", profile.id);
-
-        // 3. Kijelentkeztetjük
         await supabase.auth.signOut();
         router.push("/");
     } catch (err) {
@@ -273,7 +272,7 @@ export default function ProfilePage() {
           <p className="text-sm text-slate-500">{profile.email}</p>
         </div>
 
-        {/* MEGHÍVÁSOK */}
+        {/* MEGHÍVÁSOK (JAVÍTOTT KIÍRÁSSAL) */}
         {invites.length > 0 && (
           <section className="mb-8 animate-in slide-in-from-bottom-4">
             <div className="flex items-center gap-2 mb-3 px-1">
@@ -284,8 +283,11 @@ export default function ProfilePage() {
               {invites.map(invite => (
                 <div key={invite.id} className="bg-white rounded-2xl p-4 shadow-md border-l-4 border-orange-400 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <p className="text-xs text-orange-600 font-bold mb-1">MEGHÍVÓ ÉRKEZETT</p>
-                    <h3 className="font-bold text-slate-900">{invite.trip.title}</h3>
+                    {/* MEGHÍVÓ NEVE */}
+                    <p className="text-xs text-orange-600 font-bold mb-1">
+                        MEGHÍVÓ TŐLE: {invite.inviterName}
+                    </p>
+                    <h3 className="font-bold text-slate-900 text-lg">{invite.trip.title}</h3>
                     {invite.trip.destination && <p className="text-sm text-slate-500">{invite.trip.destination}</p>}
                   </div>
                   <div className="flex gap-2">
@@ -298,7 +300,7 @@ export default function ProfilePage() {
           </section>
         )}
 
-        {/* STATISZTIKA (Bővített) */}
+        {/* STATISZTIKA */}
         <section className="grid grid-cols-3 gap-3 mb-8">
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center">
             <div className="w-8 h-8 rounded-full bg-emerald-50 text-[#16ba53] flex items-center justify-center mb-2"><Icons.Map /></div>
@@ -317,7 +319,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* TECHNIKAI INFO + LOGOUT */}
+        {/* FIÓK ADATOK */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-8">
           <div className="p-4 border-b border-slate-50">
             <h3 className="text-sm font-bold text-slate-800">Fiók adatai</h3>
