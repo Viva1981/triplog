@@ -9,26 +9,41 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
   }
 
-  // JAVÍTÁS: Átállás a Google Places API (New) V1-re
-  // Ez a modern végpont, ami biztosan kompatibilis a keresővel
-  const url = `https://places.googleapis.com/v1/places/${placeId}?fields=location&key=${apiKey}&languageCode=hu`;
+  // JAVÍTÁS: A mezőket (location) és a kulcsot Header-ben küldjük.
+  // Ez a "Places API (New)" hivatalos, ajánlott módja.
+  const url = `https://places.googleapis.com/v1/places/${placeId}`;
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'location', // Itt kérjük le a koordinátát
+        'Accept-Language': 'hu',
+      },
+    });
+
     const data = await res.json();
 
-    // A V1 API válasza kicsit más: location: { latitude, longitude }
+    // Debugoláshoz: Ha hiba van, látni fogjuk a Vercel logokban
+    if (!res.ok) {
+      console.error("GOOGLE API ERROR:", data);
+      return NextResponse.json({ error: data.error?.message || 'Google API Error' }, { status: res.status });
+    }
+
     if (data.location) {
       return NextResponse.json({ 
         lat: data.location.latitude,
         lng: data.location.longitude 
       });
     } else {
-      console.error("Google API Error:", data);
-      return NextResponse.json({ error: 'Not found or API error' }, { status: 404 });
+      console.error("NO LOCATION IN DATA:", data);
+      return NextResponse.json({ error: 'Location not found in response' }, { status: 404 });
     }
+
   } catch (error) {
-    console.error("Server Fetch Error:", error);
-    return NextResponse.json({ error: 'Fetch failed' }, { status: 500 });
+    console.error("SERVER FETCH ERROR:", error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
