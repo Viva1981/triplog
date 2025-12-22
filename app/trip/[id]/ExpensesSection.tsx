@@ -6,7 +6,7 @@ import type { TripExpense, TripMember } from "../../../lib/trip/types";
 
 type ExpensesSectionProps = {
   tripId: string;
-  userId: string | null; // kívülről így jön, belül currentUserId-ként használjuk
+  userId: string | null;
 };
 
 type PaymentMethodOption =
@@ -81,7 +81,6 @@ export default function ExpensesSection({
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // kebab menü állapot: melyik költséghez van nyitva a menü
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -90,7 +89,6 @@ export default function ExpensesSection({
       setError(null);
 
       try {
-        // költségek
         const { data: expData, error: expError } = await supabase
           .from("trip_expenses")
           .select(
@@ -106,14 +104,16 @@ export default function ExpensesSection({
         }
 
         const mappedExpenses: TripExpense[] =
-          (expData as TripExpense[] | null)?.map((e) => ({
+          (expData as any[])?.map((e) => ({
             ...e,
             amount: Number(e.amount),
+            // JAVÍTÁS: Ha null jön az adatbázisból, legyen üres string vagy "Egyéb"
+            // Mert a TripExpense típusban a category: string (nem null)
+            category: e.category || "Egyéb",
           })) ?? [];
 
         setExpenses(mappedExpenses);
 
-        // accepted tagok: útitársak neve / email
         const { data: memberData, error: memberError } = await supabase
           .from("trip_members")
           .select("id, trip_id, user_id, role, status, display_name, email")
@@ -122,7 +122,6 @@ export default function ExpensesSection({
 
         if (memberError) {
           console.error("TRIP_MEMBERS FETCH ERROR:", memberError);
-          // nem dobjuk tovább, csak logoljuk – a költséglista attól még működjön
         } else if (memberData) {
           setMembers(memberData as TripMember[]);
         }
@@ -219,7 +218,9 @@ export default function ExpensesSection({
 
     try {
       const numericAmount = Number(editAmount);
-      const trimmedCategory = editCategory.trim() || null;
+      // JAVÍTÁS: A category nem lehet null, mert a TripExpense típus string-et vár.
+      // Ha üres, akkor "Egyéb"-re állítjuk vagy üres stringre.
+      const trimmedCategory = editCategory.trim() || "Egyéb";
       const trimmedNote = editNote.trim() || null;
       const cur = editCurrency.trim().toUpperCase() || "EUR";
 
@@ -248,7 +249,7 @@ export default function ExpensesSection({
             ? {
                 ...exp,
                 date: editDate,
-                category: trimmedCategory,
+                category: trimmedCategory, // Itt már string lesz
                 note: trimmedNote,
                 amount: numericAmount,
                 currency: cur,
@@ -322,7 +323,8 @@ export default function ExpensesSection({
 
     try {
       const numericAmount = Number(amount);
-      const trimmedCategory = category.trim() || null;
+      // JAVÍTÁS: Itt is biztosítjuk a string típust
+      const trimmedCategory = category.trim() || "Egyéb";
       const trimmedNote = note.trim() || null;
       const cur = currency.trim().toUpperCase() || "EUR";
 
@@ -357,13 +359,14 @@ export default function ExpensesSection({
       const mapped: TripExpense = {
         ...(data as any),
         amount: Number((data as any).amount),
+        // Adatbázisból visszatérve is lehet null, ezért itt is kezeljük
+        category: (data as any).category || "Egyéb", 
       };
 
       setExpenses((prev) => [mapped, ...prev]);
       setFormSuccess("Költség rögzítve.");
       setAmount("");
       setNote("");
-      // currency / payment method marad, hogy gyors legyen a következő rögzítés
     } catch (err: any) {
       console.error(err);
       setFormError(
