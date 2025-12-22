@@ -1,9 +1,73 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { TripFile } from "@/lib/trip/types";
 import FileCard from "./FileCard";
 import { motion, PanInfo, useAnimation } from "framer-motion";
+import { supabase } from "@/lib/supabaseClient";
+
+/**
+ * Hook: Nagy felbontású kép betöltése Lightboxhoz (Privát Drive fájl)
+ * Ugyanazt a logikát használja, mint a FileCard, így biztosan működni fog.
+ */
+function useLightboxImage(file: TripFile | null) {
+  const [src, setSrc] = useState<string | null>(null);
+  const urlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      if (!file?.drive_file_id) {
+        setSrc(null);
+        return;
+      }
+      
+      // Reseteljük a képet váltáskor
+      setSrc(null);
+
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.provider_token;
+
+        if (!token) return;
+
+        // Kép letöltése (alt=media) - ez a nagy felbontás
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?alt=media`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (!res.ok) throw new Error("Lightbox load error");
+
+        const blob = await res.blob();
+        if (!active) return;
+
+        const objUrl = URL.createObjectURL(blob);
+        
+        // Memória takarítás
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = objUrl;
+        
+        setSrc(objUrl);
+
+      } catch (err) {
+        console.error("Lightbox hiba:", err);
+      }
+    }
+
+    load();
+
+    return () => {
+      active = false;
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    };
+  }, [file?.drive_file_id]);
+
+  return src;
+}
 
 type PhotosSectionProps = {
   photoFiles: TripFile[];
@@ -104,7 +168,9 @@ export default function PhotosSection({
   };
 
   const current = lightboxIndex !== null ? photoFiles[lightboxIndex] : null;
-  const lightboxSrc = current?.preview_link || current?.thumbnail_link || null;
+  
+  // ITT A JAVÍTÁS: A hook használata a sima link helyett
+  const lightboxSrc = useLightboxImage(current);
 
   return (
     <>
@@ -202,8 +268,11 @@ export default function PhotosSection({
                     onClick={handleImageTap}
                   />
                 ) : (
-                  <div className="text-sm text-white">
-                    Nincs elérhető előnézet
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
+                    <div className="text-xs text-white">
+                      Kép betöltése...
+                    </div>
                   </div>
                 )}
               </motion.div>
