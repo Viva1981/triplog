@@ -10,6 +10,7 @@ const Icons = {
   Back: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>,
   Map: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>,
   Users: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+  Mail: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
   Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
   X: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
   Logout: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>,
@@ -24,7 +25,7 @@ type ProfileInfo = {
 };
 
 type PendingInvite = {
-  id: string; // invite id (NEM member id)
+  id: string; // invite id
   trip_id: string;
   trip: {
     title: string;
@@ -63,13 +64,11 @@ export default function ProfilePage() {
       provider
     });
 
-    // 1. Saját utak
     const { count: owned } = await supabase
       .from("trips")
       .select("*", { count: "exact", head: true })
       .eq("owner_id", user.id);
     
-    // 2. Közös utak
     const { count: shared } = await supabase
       .from("trip_members")
       .select("*", { count: "exact", head: true })
@@ -77,8 +76,6 @@ export default function ProfilePage() {
       .eq("role", "member")
       .eq("status", "accepted");
 
-    // 3. Függő meghívások - JAVÍTVA: TRIP_INVITES TÁBLÁBÓL!
-    // Megkeressük azokat a meghívókat, amik erre az e-mailre szólnak
     if (user.email) {
       const { data: pendingData } = await supabase
         .from("trip_invites")
@@ -90,7 +87,7 @@ export default function ProfilePage() {
             destination
           )
         `)
-        .eq("invited_email", user.email) // Itt az e-mail alapján keresünk
+        .eq("invited_email", user.email)
         .eq("status", "pending");
 
       setOwnedCount(owned || 0);
@@ -117,7 +114,7 @@ export default function ProfilePage() {
     loadData();
   }, [router]);
 
-  // JAVÍTVA: Elfogadáskor létrehozzuk a TAGSÁGOT is
+  // JAVÍTOTT ELFOGADÁS LOGIKA HIBAKEZELÉSSEL
   const handleAcceptInvite = async (inviteId: string, tripId: string) => {
     if (!profile) return;
 
@@ -131,29 +128,35 @@ export default function ProfilePage() {
         email: profile.email
     });
 
-    // Ha már tag (23505 hiba), azt nem vesszük hibának
+    // Ha a felhasználó már tag (pl. rákattintott a linkre korábban), az nem baj
     if (insertError && insertError.code !== '23505') {
         console.error("Hiba a csatlakozáskor:", insertError);
         alert("Nem sikerült csatlakozni. Próbáld újra.");
         return;
     }
 
-    // 2. Meghívó lezárása
-    await supabase
+    // 2. Meghívó lezárása (Itt volt a hiba, az RLS miatt)
+    const { error: updateError } = await supabase
       .from("trip_invites")
       .update({ status: "accepted" })
       .eq("id", inviteId);
     
-    loadData();
+    if (updateError) {
+        console.error("Meghívó státusz frissítési hiba:", updateError);
+        // Ha itt hiba van, akkor az SQL policy hiányzik!
+    } else {
+        // Ha sikeres, újratöltjük az adatokat
+        loadData();
+    }
   };
 
-  // Elutasításkor csak a meghívót állítjuk át (vagy töröljük)
   const handleDeclineInvite = async (inviteId: string) => {
-    await supabase
+    const { error } = await supabase
       .from("trip_invites")
-      .delete() // Vagy .update({ status: 'cancelled' })
+      .delete()
       .eq("id", inviteId);
     
+    if (error) console.error("Törlési hiba:", error);
     loadData();
   };
 
