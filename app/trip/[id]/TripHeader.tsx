@@ -336,13 +336,6 @@ export default function TripHeader({
           Meghívó
         </Link>
 
-        <Link
-          href={`/trip/${trip.id}/invite`}
-          className="inline-flex items-center px-4 py-2 rounded-full bg-white border border-slate-200 text-slate-600 text-xs font-medium hover:bg-slate-50 hover:text-slate-800 transition"
-        >
-          Meghívó
-        </Link>
-
         {/* JAVÍTÁS: A gomb most már aktív és a /plan oldalra visz */}
         <Link
           href={`/trip/${trip.id}/plan`}
