@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../../lib/supabaseClient";
 import type { Trip, TripActivity, ActivityType } from "../../../../lib/trip/types";
-import PlaceAutocomplete from "./PlaceAutocomplete"; // <--- ITT AZ ÚJ IMPORT
+import PlaceAutocomplete from "./PlaceAutocomplete";
 
 // --- SVG IKONOK ---
 const PlanIcons = {
@@ -15,6 +15,8 @@ const PlanIcons = {
   Plus: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
   Clock: () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   MapPin: () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+  Trash: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
+  ExternalLink: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>,
   
   // Típus ikonok
   TypeProgram: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 22V12h6v10" /></svg>,
@@ -39,11 +41,6 @@ function getDatesInRange(startDate: string, endDate: string) {
   return dates;
 }
 
-function formatShortDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("hu-HU", { month: "short", day: "numeric" });
-}
-
 function formatTime(dateStr: string) {
   const d = new Date(dateStr);
   return d.toLocaleTimeString("hu-HU", { hour: "2-digit", minute: "2-digit" });
@@ -61,13 +58,19 @@ export default function TripPlanPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"days" | "bucket">("days");
   
+  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newLocation, setNewLocation] = useState("");
-  const [newType, setNewType] = useState<ActivityType>("program");
-  const [newStartTime, setNewStartTime] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  
+  // Form State (New or Edit)
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formTitle, setFormTitle] = useState("");
+  const [formLocation, setFormLocation] = useState("");
+  const [formType, setFormType] = useState<ActivityType>("program");
+  const [formDate, setFormDate] = useState(""); // YYYY-MM-DD
+  const [formTime, setFormTime] = useState(""); // HH:mm
 
+  // 1. Init
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -106,6 +109,7 @@ export default function TripPlanPage() {
     if (data) setActivities(data as TripActivity[]);
   };
 
+  // 2. Computed
   const tripDates = useMemo(() => {
     if (!trip?.date_from || !trip?.date_to) return [];
     return getDatesInRange(trip.date_from, trip.date_to);
@@ -121,37 +125,99 @@ export default function TripPlanPage() {
     return [];
   }, [activities, viewMode, selectedDate]);
 
-  const handleAddActivity = async (e: React.FormEvent) => {
+  // 3. Handlers
+  const openModal = (activity?: TripActivity) => {
+    if (activity) {
+      // Edit mode
+      setEditingId(activity.id);
+      setFormTitle(activity.title);
+      setFormLocation(activity.location_name || "");
+      setFormType(activity.type);
+      
+      if (activity.start_time) {
+        const d = new Date(activity.start_time);
+        setFormDate(activity.start_time.split('T')[0]);
+        setFormTime(d.toLocaleTimeString("hu-HU", { hour: "2-digit", minute: "2-digit" }));
+      } else {
+        setFormDate("");
+        setFormTime("");
+      }
+    } else {
+      // Create mode
+      setEditingId(null);
+      setFormTitle("");
+      setFormLocation("");
+      setFormType("program");
+      // Ha napi nézetben vagyunk, alapból azt a napot ajánljuk fel
+      if (viewMode === "days" && selectedDate) {
+        setFormDate(selectedDate);
+        setFormTime("09:00");
+      } else {
+        setFormDate("");
+        setFormTime("");
+      }
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trip || !user) return;
-    
     setSubmitting(true);
 
     let finalStartTime: string | null = null;
-    
-    if (viewMode === "days" && selectedDate) {
-      const time = newStartTime || "08:00";
-      finalStartTime = `${selectedDate}T${time}:00`; 
+    if (formDate) {
+        const time = formTime || "00:00";
+        finalStartTime = `${formDate}T${time}:00`;
     }
 
-    const { error } = await supabase.from("trip_activities").insert({
-      trip_id: trip.id,
-      created_by: user.id,
-      title: newTitle,
-      location_name: newLocation,
-      type: newType,
+    const payload = {
+      title: formTitle,
+      location_name: formLocation,
+      type: formType,
       start_time: finalStartTime,
-      status: "planned"
-    });
+    };
+
+    let error;
+    if (editingId) {
+      // UPDATE
+      const res = await supabase.from("trip_activities").update(payload).eq("id", editingId);
+      error = res.error;
+    } else {
+      // INSERT
+      const res = await supabase.from("trip_activities").insert({
+        ...payload,
+        trip_id: trip.id,
+        created_by: user.id,
+        status: "planned"
+      });
+      error = res.error;
+    }
 
     if (!error) {
       await fetchActivities(trip.id);
       setIsModalOpen(false);
-      setNewTitle("");
-      setNewLocation("");
-      setNewStartTime("");
     }
     setSubmitting(false);
+  };
+
+  const handleDelete = async () => {
+    if (!editingId) return;
+    const confirm = window.confirm("Biztosan törlöd ezt a programot?");
+    if (!confirm) return;
+
+    const { error } = await supabase.from("trip_activities").delete().eq("id", editingId);
+    if (!error) {
+      await fetchActivities(trip!.id);
+      setIsModalOpen(false);
+    }
+  };
+
+  // Navigáció indítása
+  const openNavigation = (location: string) => {
+    if (!location) return;
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+    window.open(url, '_blank');
   };
 
   const TypeSelector = ({ selected, onSelect }: { selected: ActivityType, onSelect: (t: ActivityType) => void }) => {
@@ -242,7 +308,7 @@ export default function TripPlanPage() {
           </div>
         )}
 
-        {/* IDŐVONAL NÉZET */}
+        {/* IDŐVONAL */}
         <div className="space-y-4">
           {currentActivities.length === 0 ? (
             <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl">
@@ -253,7 +319,7 @@ export default function TripPlanPage() {
               <p className="text-xs text-slate-400">Tervezz valami izgalmasat!</p>
             </div>
           ) : (
-            <div className="relative border-l-2 border-slate-200 ml-4 space-y-6 pb-4">
+            <div className="relative border-l-2 border-slate-200 ml-4 space-y-4 pb-4">
               {currentActivities.map((activity, idx) => {
                 const TypeIcon = 
                   activity.type === 'food' ? PlanIcons.TypeFood :
@@ -266,7 +332,11 @@ export default function TripPlanPage() {
                   <div key={activity.id} className="relative pl-6">
                     <div className="absolute -left-[9px] top-4 w-4 h-4 rounded-full border-2 border-white bg-[#16ba53] shadow-sm"></div>
                     
-                    <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition group">
+                    {/* KATTINTHATÓ KÁRTYA (EDIT) */}
+                    <div 
+                      onClick={() => openModal(activity)}
+                      className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition group cursor-pointer"
+                    >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           {activity.start_time && (
@@ -286,8 +356,24 @@ export default function TripPlanPage() {
                           )}
                         </div>
 
-                        <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-[#16ba53] group-hover:bg-emerald-50 transition">
-                          <TypeIcon />
+                        <div className="flex flex-col items-end gap-2">
+                           <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-[#16ba53] group-hover:bg-emerald-50 transition">
+                             <TypeIcon />
+                           </div>
+                           
+                           {/* NAVIGÁCIÓ GOMB */}
+                           {activity.location_name && (
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation(); // Ne nyissa meg a szerkesztőt
+                                 openNavigation(activity.location_name!);
+                               }}
+                               className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition"
+                               title="Navigáció indítása"
+                             >
+                               <PlanIcons.ExternalLink />
+                             </button>
+                           )}
                         </div>
                       </div>
                     </div>
@@ -298,9 +384,9 @@ export default function TripPlanPage() {
           )}
         </div>
 
-        {/* FAB GOMB */}
+        {/* FAB */}
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => openModal()}
           className="fixed bottom-6 right-6 bg-[#16ba53] text-white p-4 rounded-full shadow-lg hover:bg-[#139a45] active:scale-95 transition-all z-20 flex items-center gap-2 pr-6"
         >
           <PlanIcons.Plus />
@@ -310,14 +396,16 @@ export default function TripPlanPage() {
         {/* MODAL */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white w-full max-w-md rounded-2xl p-5 shadow-2xl animate-in slide-in-from-bottom-10">
-              <h2 className="text-lg font-bold text-slate-900 mb-4">Új program hozzáadása</h2>
+            <div className="bg-white w-full max-w-md rounded-2xl p-5 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
+              <h2 className="text-lg font-bold text-slate-900 mb-4">
+                {editingId ? "Program szerkesztése" : "Új program hozzáadása"}
+              </h2>
               
-              <form onSubmit={handleAddActivity} className="space-y-4">
+              <form onSubmit={handleSave} className="space-y-4">
                 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Típus</label>
-                  <TypeSelector selected={newType} onSelect={setNewType} />
+                  <TypeSelector selected={formType} onSelect={setFormType} />
                 </div>
 
                 <div>
@@ -326,34 +414,55 @@ export default function TripPlanPage() {
                     type="text" 
                     required
                     placeholder="Pl.: Vacsora a parton"
-                    value={newTitle}
-                    onChange={e => setNewTitle(e.target.value)}
+                    value={formTitle}
+                    onChange={e => setFormTitle(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Helyszín</label>
-                  {/* --- ITT HASZNÁLJUK AZ ÚJ KOMPONENST --- */}
                   <PlaceAutocomplete 
-                    value={newLocation} 
-                    onChange={setNewLocation} 
+                    value={formLocation} 
+                    onChange={setFormLocation} 
                   />
                 </div>
 
-                {viewMode === "days" && (
+                {/* Dátum és Idő (Mindig látható szerkesztéskor) */}
+                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Kezdés ideje</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dátum</label>
+                    <input 
+                      type="date" 
+                      value={formDate}
+                      onChange={e => setFormDate(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Üresen hagyva: Bakancslista</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Kezdés</label>
                     <input 
                       type="time" 
-                      value={newStartTime}
-                      onChange={e => setNewStartTime(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53]"
+                      value={formTime}
+                      onChange={e => setFormTime(e.target.value)}
+                      disabled={!formDate}
+                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#16ba53] disabled:opacity-50"
                     />
                   </div>
-                )}
+                </div>
 
                 <div className="flex gap-2 pt-2">
+                  {editingId && (
+                    <button 
+                      type="button" 
+                      onClick={handleDelete}
+                      className="p-2.5 rounded-xl border border-red-100 text-red-500 bg-red-50 hover:bg-red-100"
+                      title="Törlés"
+                    >
+                      <PlanIcons.Trash />
+                    </button>
+                  )}
                   <button 
                     type="button" 
                     onClick={() => setIsModalOpen(false)}
@@ -366,7 +475,7 @@ export default function TripPlanPage() {
                     disabled={submitting}
                     className="flex-1 py-2.5 rounded-xl bg-[#16ba53] text-white text-sm font-bold hover:opacity-90 disabled:opacity-70"
                   >
-                    {submitting ? "Mentés..." : "Hozzáadás"}
+                    {submitting ? "Mentés..." : (editingId ? "Módosítás" : "Hozzáadás")}
                   </button>
                 </div>
               </form>
