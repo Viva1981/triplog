@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 
 // --- SVG IKONOK ---
 const Icons = {
+  Back: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>,
   Map: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>,
   Users: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
   Mail: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
@@ -34,14 +36,12 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [loading, setLoading] = useState(true);
   
-  // Statisztikák
   const [ownedCount, setOwnedCount] = useState(0);
   const [sharedCount, setSharedCount] = useState(0);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
 
   const router = useRouter();
 
-  // Adatbetöltés
   const loadData = async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -51,7 +51,6 @@ export default function ProfilePage() {
       return;
     }
 
-    // Profil info kinyerése
     const name = (user.user_metadata as any)?.full_name ?? (user.user_metadata as any)?.name ?? null;
     const avatarUrl = (user.user_metadata as any)?.avatar_url ?? (user.user_metadata as any)?.picture ?? null;
     const provider = (user.app_metadata as any)?.provider ?? "email";
@@ -64,13 +63,13 @@ export default function ProfilePage() {
       provider
     });
 
-    // 1. Saját utak száma
+    // 1. Saját utak
     const { count: owned } = await supabase
       .from("trips")
       .select("*", { count: "exact", head: true })
       .eq("owner_id", user.id);
     
-    // 2. Megosztott utak száma (ahol member vagy ÉS accepted)
+    // 2. Közös utak
     const { count: shared } = await supabase
       .from("trip_members")
       .select("*", { count: "exact", head: true })
@@ -78,7 +77,8 @@ export default function ProfilePage() {
       .eq("role", "member")
       .eq("status", "accepted");
 
-    // 3. Függő meghívások (ahol pending vagy)
+    // 3. Függő meghívások (TRIP_MEMBERS tábla alapján!)
+    // Ha a trip_invites-ben van, de a trip_members-ben nincs, itt NEM látszik.
     const { data: pendingData } = await supabase
       .from("trip_members")
       .select(`
@@ -94,7 +94,6 @@ export default function ProfilePage() {
     setOwnedCount(owned || 0);
     setSharedCount(shared || 0);
     
-    // Type casting a join miatt
     if (pendingData) {
       const mappedInvites = pendingData.map((item: any) => ({
         id: item.id,
@@ -113,23 +112,13 @@ export default function ProfilePage() {
     loadData();
   }, [router]);
 
-  // Műveletek
   const handleAcceptInvite = async (memberId: string) => {
-    await supabase
-      .from("trip_members")
-      .update({ status: "accepted" })
-      .eq("id", memberId);
-    
-    // Újratöltjük az adatokat, hogy frissüljön a lista
+    await supabase.from("trip_members").update({ status: "accepted" }).eq("id", memberId);
     loadData();
   };
 
   const handleDeclineInvite = async (memberId: string) => {
-    await supabase
-      .from("trip_members")
-      .delete()
-      .eq("id", memberId);
-    
+    await supabase.from("trip_members").delete().eq("id", memberId);
     loadData();
   };
 
@@ -152,7 +141,14 @@ export default function ProfilePage() {
     <main className="min-h-screen bg-slate-50 pb-20">
       <div className="max-w-2xl mx-auto px-4 py-8">
         
-        {/* FEJLÉC PROFILKÉPPEL */}
+        {/* Vissza gomb - ÚJ */}
+        <div className="mb-6">
+          <Link href="/" className="inline-flex items-center text-xs text-slate-500 hover:text-slate-800 transition">
+            <Icons.Back /> <span className="ml-1">Vissza a főoldalra</span>
+          </Link>
+        </div>
+        
+        {/* FEJLÉC */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-24 h-24 rounded-full bg-white p-1 shadow-md mb-4 relative">
             {profile.avatarUrl ? (
@@ -167,8 +163,7 @@ export default function ProfilePage() {
               </div>
             )}
             <div className="absolute bottom-1 right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-sm">
-                {/* Google ikon helyett sima pont vagy provider ikon */}
-                <div className="w-4 h-4 bg-blue-500 rounded-full"></div> 
+                <div className="w-4 h-4 bg-blue-500 rounded-full" title={profile.provider || "email"}></div> 
             </div>
           </div>
           
@@ -178,7 +173,7 @@ export default function ProfilePage() {
           <p className="text-sm text-slate-500">{profile.email}</p>
         </div>
 
-        {/* MEGHÍVÁSOK (Csak ha van) */}
+        {/* MEGHÍVÁSOK */}
         {invites.length > 0 && (
           <section className="mb-8 animate-in slide-in-from-bottom-4">
             <div className="flex items-center gap-2 mb-3 px-1">
@@ -216,7 +211,7 @@ export default function ProfilePage() {
           </section>
         )}
 
-        {/* STATISZTIKA GRID */}
+        {/* STATISZTIKA */}
         <section className="grid grid-cols-2 gap-4 mb-8">
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center">
             <div className="w-10 h-10 rounded-full bg-emerald-50 text-[#16ba53] flex items-center justify-center mb-2">
@@ -235,7 +230,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* TECHNIKAI INFO + LOGOUT */}
+        {/* FIÓK ADATOK */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-4 border-b border-slate-50">
             <h3 className="text-sm font-bold text-slate-800">Fiók adatai</h3>

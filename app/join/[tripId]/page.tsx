@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -19,7 +18,7 @@ export default function JoinTripPage() {
   const params = useParams();
   const router = useRouter();
 
-  // A dinamikus szegmens neve a fájlrendszerben [tripId], de valójában TOKEN-t tartalmaz.
+  // A route paraméter a fájlnév miatt tripId, de valójában ez a TOKEN
   const token = typeof params?.tripId === "string" ? params.tripId : "";
 
   const [state, setState] = useState<JoinState>("loading");
@@ -33,7 +32,7 @@ export default function JoinTripPage() {
     }
 
     const run = async () => {
-      // 1) Auth: van-e bejelentkezett user?
+      // 1) Auth ellenőrzés
       const {
         data: { user },
         error: userError,
@@ -44,32 +43,23 @@ export default function JoinTripPage() {
         return;
       }
 
-      // 2) Meghívó lekérése token alapján a trip_invites táblából
-      const {
-        data: invite,
-        error: inviteError,
-      } = await supabase
+      // 2) Meghívó keresése
+      const { data: invite, error: inviteError } = await supabase
         .from("trip_invites")
-        .select(
-          "id, trip_id, status, role, invited_email"
-        )
+        .select("id, trip_id, status, role, invited_email")
         .eq("token", token)
         .single<TripInvite>();
 
       if (inviteError || !invite) {
         console.error("JOIN TRIP INVITE ERROR:", inviteError);
         setState("error");
-        setErrorMessage(
-          "Ez a meghívó nem található. Lehet, hogy lejárt vagy már törölték."
-        );
+        setErrorMessage("Ez a meghívó nem található. Lehet, hogy lejárt vagy már törölték.");
         return;
       }
 
-      // Ha nagyon szigorúak akarunk lenni, itt lehetne státuszt ellenőrizni (pending/expired stb.)
-
       const tripId = invite.trip_id;
 
-      // 3) Megpróbáljuk felvenni a usert a trip_members-be
+      // 3) Tag felvétele (trip_members)
       const displayName =
         (user.user_metadata as any)?.full_name ||
         (user.user_metadata as any)?.name ||
@@ -79,41 +69,48 @@ export default function JoinTripPage() {
         trip_id: tripId,
         user_id: user.id,
         role: invite.role || "member",
-        status: "accepted",
+        status: "accepted", // Azonnal elfogadott
         display_name: displayName,
         email: user.email,
       });
 
+      // 4) Hiba és Duplikáció kezelése + Meghívó lezárása
       if (insertError) {
         const pgCode = (insertError as any).code;
-        console.error("JOIN TRIP INSERT ERROR:", insertError);
 
-        // 23505 = unique_violation (trip_id, user_id) → már tag
+        // 23505 = Már tag (unique violation)
         if (pgCode === "23505") {
+          // Ha már tag, akkor is lezárjuk a meghívót, hogy ne maradjon "pending"
+          await supabase
+            .from("trip_invites")
+            .update({ status: "accepted" })
+            .eq("id", invite.id);
+
           setState("already");
-          setTimeout(() => {
-            router.replace(`/trip/${tripId}`);
-          }, 1200);
+          setTimeout(() => router.replace(`/trip/${tripId}`), 1200);
           return;
         }
 
-        // 23503 = foreign_key_violation → meghívó olyan tripre mutat, ami már nem létezik
+        // 23503 = Nem létező trip
         if (pgCode === "23503") {
           setState("error");
-          setErrorMessage(
-            "Ez a meghívó már egy nem létező utazásra mutat. Lehet, hogy törölték az utazást."
-          );
+          setErrorMessage("Ez a meghívó már egy nem létező utazásra mutat.");
           return;
         }
 
+        console.error("JOIN ERROR:", insertError);
         setState("error");
-        setErrorMessage(
-          "Nem sikerült csatlakozni ehhez az utazáshoz. Lehet, hogy a link már nem érvényes, vagy nincs jogosultságod."
-        );
+        setErrorMessage("Nem sikerült csatlakozni. Lehet, hogy a link érvénytelen.");
         return;
       }
 
-      // 4) Siker: accepted member lett
+      // 5) SIKER: Meghívó státusz frissítése (EZ HIÁNYZOTT!)
+      // Most, hogy sikeresen belépett, a meghívót átállítjuk 'accepted'-re
+      await supabase
+        .from("trip_invites")
+        .update({ status: "accepted" })
+        .eq("id", invite.id);
+
       setState("success");
       setTimeout(() => {
         router.replace(`/trip/${tripId}`);
@@ -123,54 +120,60 @@ export default function JoinTripPage() {
     run();
   }, [token, router]);
 
-  // --- UI állapotok --------------------------------------------------------
+  // --- UI Állapotok (Clean UI) ---
 
-  let title = "Csatlakozás az utazáshoz…";
+  let title = "Csatlakozás folyamatban...";
   let description = "Ellenőrizzük a meghívót és felveszünk útitársként.";
   let highlight = "";
-  let highlightColor = "text-emerald-700";
+  let highlightColor = "text-[#16ba53]";
   let buttonLabel = "Vissza a főoldalra";
 
   if (state === "no-user") {
     title = "Bejelentkezés szükséges";
-    description =
-      "Az utazáshoz való csatlakozáshoz először jelentkezz be a jobb felső sarokban.";
-    highlight = "Miután beléptél, nyisd meg újra ezt a meghívó linket.";
-    highlightColor = "text-slate-700";
+    description = "Az utazáshoz való csatlakozáshoz először jelentkezz be.";
+    highlight = "Miután beléptél, kattints újra a meghívó linkre.";
+    highlightColor = "text-slate-600";
   }
 
   if (state === "success") {
-    title = "Sikeres csatlakozás 🎉";
-    description = "Hozzáadtunk útitársként ehhez az utazáshoz.";
-    highlight = "Mindjárt átirányítunk az utazás oldalára…";
+    title = "Sikeres csatlakozás";
+    description = "Hozzáadtunk útitársként az utazáshoz.";
+    highlight = "Átirányítás az utazás oldalára...";
   }
 
   if (state === "already") {
-    title = "Már útitársa vagy ennek az utazásnak";
-    description = "Ezt az utazást már korábban felvetted.";
-    highlight = "Mindjárt megnyitjuk az utazás részleteit…";
+    title = "Már útitárs vagy";
+    description = "Ezt az utazást már korábban felvetted a listádra.";
+    highlight = "Utazás megnyitása...";
   }
 
   if (state === "error") {
-    title = "Hiba a csatlakozás közben";
-    description = errorMessage || "Váratlan hiba történt.";
+    title = "Hiba történt";
+    description = errorMessage || "Váratlan hiba.";
     highlight = "";
     highlightColor = "text-red-600";
   }
 
   return (
-    <main className="min-h-[60vh] flex items-center justify-center px-4 py-6">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-md border border-slate-100 p-5 text-center">
-        <h1 className="text-lg font-semibold text-slate-900 mb-2">{title}</h1>
-        <p className="text-sm text-slate-600 mb-3">{description}</p>
+    <main className="min-h-[60vh] flex items-center justify-center px-4 py-6 bg-slate-50">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-6 text-center">
+        {state === "loading" && (
+           <div className="mb-4 flex justify-center">
+             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#16ba53]"></div>
+           </div>
+        )}
+        
+        <h1 className="text-lg font-bold text-slate-900 mb-2">{title}</h1>
+        <p className="text-sm text-slate-600 mb-4">{description}</p>
+        
         {highlight && (
-          <p className={`text-xs ${highlightColor} mb-4`}>{highlight}</p>
+          <p className={`text-xs font-medium ${highlightColor} mb-6`}>{highlight}</p>
         )}
 
         <button
           type="button"
           onClick={() => router.push("/")}
-          className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-500 text-white text-sm font-medium hover:opacity-90"
+          className="inline-flex items-center justify-center px-5 py-2.5 rounded-full bg-[#16ba53] text-white text-sm font-bold hover:opacity-90 transition shadow-sm active:scale-95"
         >
           {buttonLabel}
         </button>
