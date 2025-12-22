@@ -26,8 +26,7 @@ type Membership = {
 
 type TripWithRole = Trip & { memberRole: "owner" | "member" };
 
-// --- NAVBAR KOMPONENS (a fájl tetejére) ---
-// Ez a fejléc, ami a be- és kijelentkezett állapotot kezeli
+// --- NAVBAR KOMPONENS ---
 const AppNavbar = ({ user }: { user: User | null }) => {
   const router = useRouter();
 
@@ -36,8 +35,9 @@ const AppNavbar = ({ user }: { user: User | null }) => {
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
+        // JAVÍTÁS: drive.file helyett sima drive (teljes hozzáférés a megosztott fájlokhoz)
         scopes:
-          "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
+          "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email",
         queryParams: {
           access_type: "offline",
           prompt: "consent",
@@ -60,7 +60,6 @@ const AppNavbar = ({ user }: { user: User | null }) => {
         <span className="text-xl font-bold text-slate-800 hidden sm:block">TripLog</span>
       </Link>
       
-      {/* Gombok attól függően, hogy be van-e lépve a user */}
       {user ? (
         <div className="flex items-center gap-2">
           <Link href="/new-trip" className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold transition">
@@ -235,8 +234,9 @@ export default function HomePage() {
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
+          // JAVÍTÁS: drive.file helyett sima drive
           scopes:
-            "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email",
           queryParams: {
             access_type: "offline",
             prompt: "consent",
@@ -331,7 +331,7 @@ export default function HomePage() {
                   onClick={handleLogin}
                   className="w-full mt-4 bg-[#16ba53] hover:bg-[#139a45] text-white py-3 rounded-xl font-bold text-lg transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
                 >
-                  Kezdjünk hozzá! 🚀
+                  Kezdjünk hozzá! 
                 </button>
               </div>
             </div>
