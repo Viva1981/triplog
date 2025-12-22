@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const next = searchParams.get('next') ?? '/'
 
   if (code) {
-    // JAVÍTÁS: Next.js 15-ben a cookies() aszinkron, ezért kell az 'await'
+    // A cookies() hívás Next.js 15-ben await-et igényel
     const cookieStore = await cookies()
     
     const supabase = createServerClient(
@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     }
   }
 
-  // Hiba esetén visszairányítás
-  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
+  // JAVÍTÁS: Ha hiba van, vagy nincs kód, visszairányítunk a főoldalra
+  // egy ?error paraméterrel, ahelyett, hogy 404-re futnánk.
+  return NextResponse.redirect(`${origin}/?error=auth_failed`)
 }
