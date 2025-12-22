@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 
 type User = {
@@ -24,6 +25,65 @@ type Membership = {
 };
 
 type TripWithRole = Trip & { memberRole: "owner" | "member" };
+
+// --- NAVBAR KOMPONENS (a fájl tetejére) ---
+// Ez a fejléc, ami a be- és kijelentkezett állapotot kezeli
+const AppNavbar = ({ user }: { user: User | null }) => {
+  const router = useRouter();
+
+  const handleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes:
+          "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
+    });
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
+
+  return (
+    <nav className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between shadow-sm sticky top-0 z-30">
+      <Link href="/" className="flex items-center gap-2">
+        <div className="w-8 h-8 bg-[#16ba53] rounded-full flex items-center justify-center text-white font-bold text-xl">
+          T
+        </div>
+        <span className="text-xl font-bold text-slate-800 hidden sm:block">TripLog</span>
+      </Link>
+      
+      {/* Gombok attól függően, hogy be van-e lépve a user */}
+      {user ? (
+        <div className="flex items-center gap-2">
+          <Link href="/new-trip" className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold transition">
+            Új utazás
+          </Link>
+          <Link href="/profile" className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold transition">
+            Profil
+          </Link>
+          <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-slate-800 px-3 py-2">
+            Kijelentkezés
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={handleLogin}
+          className="bg-[#16ba53] hover:bg-[#139a45] text-white px-5 py-2 rounded-full text-sm font-semibold transition-all shadow-md hover:shadow-lg active:scale-95"
+        >
+          Bejelentkezés Google-lel
+        </button>
+      )}
+    </nav>
+  );
+};
 
 export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -73,7 +133,6 @@ export default function HomePage() {
       setError(null);
 
       try {
-        // 1) tagságok
         const { data: memberships, error: memberError } = await supabase
           .from("trip_members")
           .select("trip_id, role")
@@ -94,7 +153,6 @@ export default function HomePage() {
 
         const tripIds = membershipList.map((m) => m.trip_id);
 
-        // 2) utak
         const { data: tripsData, error: tripsError } = await supabase
           .from("trips")
           .select("*")
@@ -170,35 +228,120 @@ export default function HomePage() {
     );
   }
 
-  // --- NINCS BEJELENTKEZVE: NINCS TÖBBÉ LOGIN GOMB ITT :) ---
+  // --- NINCS BEJELENTKEZVE: HERO PAGE MEGJELENÍTÉSE ---
   if (!user) {
-    return (
-      <main className="min-h-screen bg-slate-50 flex flex-col items-center pt-16 px-4">
-        <section className="w-full max-w-4xl mb-10">
-          <h1 className="text-3xl font-bold mb-2 text-slate-900">TripLog</h1>
-          <p className="text-slate-600">
-            Utazások tervezése, dokumentálása, költségek egy helyen.
-          </p>
-        </section>
+    const handleLogin = async () => {
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          scopes:
+            "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+        },
+      });
+    };
 
-        <section className="w-full max-w-xl">
-          <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-            <h2 className="text-xl font-semibold mb-3">
-              Kezdd azzal, hogy bejelentkezel
-            </h2>
-            <p className="text-slate-600 mb-4 text-sm">
-              A jobb felső sarokban található{" "}
-              <span className="font-semibold">„Bejelentkezés Google-lel”</span>{" "}
-              gombbal tudsz belépni. Ezután létrehozhatod az első utazásodat,
-              rögzítheted a költségeket, és feltöltheted a fotókat és
-              dokumentumokat.
-            </p>
-            <p className="text-xs text-slate-400">
-              (Itt később lehet valami menő bemutató / reklám blokk a TripLog
-              funkcióiról. 😉)
-            </p>
+    return (
+      <main className="min-h-screen bg-slate-50 flex flex-col">
+        <AppNavbar user={null} />
+
+        <div className="flex-1 flex flex-col items-center justify-center p-6 max-w-6xl mx-auto w-full">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            
+            <div className="text-left space-y-6">
+              <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900 leading-tight">
+                Utazásaid minden emléke <br />
+                <span className="text-[#16ba53]">egyetlen helyen.</span>
+              </h1>
+              <p className="text-lg text-slate-600">
+                Tervezz, fotózz, mentsd a dokumentumokat és kövesd a költségeket.
+                A TripLog mindent automatikusan a <strong>saját Google Drive-odba</strong> rendszerez.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-4 pt-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 text-xl">
+                    📸
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">Galéria</h3>
+                    <p className="text-xs text-slate-500">Fotók rendszerezve</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 text-xl">
+                    📂
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">Dokumentumok</h3>
+                    <p className="text-xs text-slate-500">Jegyek, foglalások</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 text-xl">
+                    📊
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">Költségek</h3>
+                    <p className="text-xs text-slate-500">Pénzügyi áttekintés</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl p-8 shadow-xl border border-slate-100 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-2 bg-[#16ba53]"></div>
+              
+              <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                ⚠️ Fontos infó az első belépéshez
+              </h2>
+              
+              <div className="space-y-4 text-sm text-slate-600">
+                <p>
+                  Mivel a TripLog egy független fejlesztés, és közvetlen hozzáférést kér 
+                  a <strong>saját fájljaid feltöltéséhez</strong>, a Google első alkalommal 
+                  biztonsági figyelmeztetést jeleníthet meg.
+                </p>
+                
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <p className="font-semibold text-slate-800 mb-2">Így tudsz belépni:</p>
+                  <ol className="list-decimal list-inside space-y-2 marker:text-[#16ba53] marker:font-bold">
+                    <li>
+                      Kattints a <span className="font-bold text-slate-900">Bejelentkezés</span> gombra.
+                    </li>
+                    <li>
+                      A figyelmeztető képernyőn válaszd a <span className="font-bold text-slate-900">Advanced (Speciális)</span> lehetőséget.
+                    </li>
+                    <li>
+                      Kattints a <span className="font-bold text-slate-900">Go to TripLog (unsafe)</span> linkre alul.
+                    </li>
+                  </ol>
+                </div>
+
+                <p className="text-xs text-slate-400 mt-2">
+                  *Az "unsafe" (nem biztonságos) jelzés kizárólag azt jelenti, hogy az alkalmazást 
+                  még nem auditálta a Google marketing csapata. Az adataid sosem hagyják el a saját Google fiókodat.
+                </p>
+
+                <button
+                  onClick={handleLogin}
+                  className="w-full mt-4 bg-[#16ba53] hover:bg-[#139a45] text-white py-3 rounded-xl font-bold text-lg transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
+                >
+                  Kezdjünk hozzá! 🚀
+                </button>
+              </div>
+            </div>
+
           </div>
-        </section>
+        </div>
+
+        <footer className="text-center py-6 text-slate-400 text-xs">
+          <p>&copy; {new Date().getFullYear()} TripLog. Minden jog fenntartva.</p>
+        </footer>
       </main>
     );
   }
@@ -206,6 +349,8 @@ export default function HomePage() {
   // --- BEJELENTKEZVE: UTAZÁS LISTA ---
   return (
     <main className="min-h-screen bg-slate-50 pb-16">
+      <AppNavbar user={user} />
+      
       <div className="max-w-5xl mx-auto px-4 pt-10 space-y-8">
         <section className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold text-slate-900">Utazásaid</h1>
