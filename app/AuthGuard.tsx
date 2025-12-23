@@ -19,7 +19,8 @@ export default function AuthGuard() {
       }
       
       // 2. ESET: Lejárt a token és nem sikerült frissíteni (pl. reggelre)
-      if (event === "TOKEN_REFRESH_ERROR") {
+      // JAVÍTÁS: (event as string) használata a TypeScript hiba elkerülésére
+      if ((event as string) === "TOKEN_REFRESH_ERROR") {
         console.warn("Lejárt a munkamenet, kijelentkeztetés...");
         // Kényszerített kijelentkezés és frissítés
         supabase.auth.signOut();
