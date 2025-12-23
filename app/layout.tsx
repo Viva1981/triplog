@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import AuthGuard from "./AuthGuard"; // <--- 1. Importáljuk az őrszemet
 
-// Helyi fájlok helyett a beépített Google Inter betűtípust használjuk
-// Ez sokkal stabilabb és nem okoz "File not found" hibát
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -20,7 +19,7 @@ export default function RootLayout({
   return (
     <html lang="hu">
       <body className={inter.className}>
-        {/* A Header-t innen már kivettük, így nem lesz duplázódás */}
+        <AuthGuard /> {/* <--- 2. Betesszük ide, hogy mindig fusson a háttérben */}
         {children}
       </body>
     </html>

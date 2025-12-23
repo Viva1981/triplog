@@ -12,7 +12,6 @@ type Membership = { trip_id: string; role: "owner" | "member"; };
 type TripWithRole = Trip & { memberRole: "owner" | "member" };
 
 // --- SEGÉDFÜGGVÉNYEK (Maradnak) ---
-// ... (Státusz, színátmenet logika marad) ...
 function getTripStatus(dateFrom: string | null, dateTo: string | null) {
   if (!dateFrom) return { label: "Tervezés alatt", color: "bg-slate-100 text-slate-600 border-slate-200" };
   const now = new Date(); now.setHours(0, 0, 0, 0);
@@ -69,7 +68,8 @@ const AppNavbar = ({ user }: { user: User | null }) => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push("/");
+    // JAVÍTÁS: router.push helyett teljes újratöltés, hogy töröljük a memóriából a sessiont
+    window.location.href = "/";
   };
 
   return (
